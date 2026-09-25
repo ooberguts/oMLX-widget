@@ -103,6 +103,16 @@ Build elsewhere with `OMLX_WIDGET_APP=/Applications/"oMLX Widget.app" ./build.sh
 and tokens/sec graphs, request counts, and per-model lifetime tokens, request
 count, average/peak/low tok/s plus tokens generated since the model was loaded.
 
+A **Server** row at the bottom shows the running oMLX version and whether a
+newer release exists. Updating checks out that tag, reinstalls into the private
+venv and restarts the server — so it asks twice, since a restart drops
+in-flight requests. If the reinstall fails it rolls back to the previous
+revision so the server still starts.
+
+The check treats GitHub's own prerelease flag as authoritative rather than
+guessing from the tag name: `v0.7.0rc1` is published as a normal release even
+though it reads like a candidate.
+
 **Models** — everything on disk with sizes, two-click delete, and downloads by
 exact repo id or Hugging Face search. **Serve** moves the `local` alias onto a
 model so clients can switch models without touching their own config.

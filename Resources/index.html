@@ -250,6 +250,18 @@
     <div id="models"><div class="empty">no models yet</div></div>
   </div>
 
+  <div class="sec" style="margin-top:2px">
+    <div class="sechd"><div class="lbl">Server</div></div>
+    <div class="row">
+      <div class="sdot" id="oDot"></div>
+      <div class="rmeta">
+        <div class="rname">oMLX <span id="oVer">…</span></div>
+        <div class="rsub" id="oSub">checking for updates…</div>
+      </div>
+      <button class="mini" id="oBtn" style="display:none"></button>
+    </div>
+  </div>
+
   </div><!-- /paneMon -->
 
   <div id="paneMod" style="display:none;flex-direction:column;gap:9px">
@@ -678,6 +690,50 @@ window.onUpdate = u => {
       : `up to date (${u.current})`;
     toast(u.unknown ? 'no commit stamp — updates disabled' : 'up to date');
   }
+};
+
+// ── oMLX server version ──
+let omlxUpd = null, oArmed = false, oArmT = null;
+
+window.onOmlxUpdate = u => {
+  if (!u || u.error) { $('oSub').textContent = u?.error || 'version check failed'; return; }
+  $('oBtn').disabled = false;   // re-enable after an update attempt
+  $('oVer').textContent = u.installed || '?';
+  omlxUpd = u.available ? u : null;
+  $('oDot').className = 'sdot' + (u.available ? ' load' : ' on');
+  if (u.available) {
+    $('oSub').innerHTML = `<span class="warn">${esc(u.latest)} available</span>`;
+    $('oBtn').style.display = '';
+    $('oBtn').textContent = 'Update';
+    $('oBtn').className = 'mini';
+  } else {
+    $('oSub').textContent = 'up to date';
+    $('oBtn').style.display = '';
+    $('oBtn').textContent = 'Check';
+    $('oBtn').className = 'mini';
+  }
+};
+
+$('oBtn').onclick = () => {
+  if (!omlxUpd) { $('oSub').textContent = 'checking…'; return send('omlxCheck'); }
+  if (!oArmed) {
+    // Applying restarts the server and drops in-flight requests.
+    oArmed = true;
+    $('oBtn').textContent = 'Restart server?';
+    $('oBtn').className = 'mini danger';
+    clearTimeout(oArmT);
+    oArmT = setTimeout(() => {
+      oArmed = false;
+      $('oBtn').textContent = 'Update';
+      $('oBtn').className = 'mini';
+    }, 5000);
+    return;
+  }
+  oArmed = false; clearTimeout(oArmT);
+  $('oBtn').textContent = '…';
+  $('oBtn').disabled = true;
+  $('oSub').textContent = 'updating — this takes a minute';
+  send('omlxUpdate', omlxUpd.latest_tag);
 };
 
 // ── hermes ──

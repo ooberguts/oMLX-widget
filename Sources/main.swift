@@ -365,6 +365,11 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
         tick()
         call("window.onVersion", ["version": Updater.version,
                                   "commit": String(Updater.currentCommit.prefix(7))])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            self.runScript("omlx-update", ["check"]) { j in
+                self.call("window.onOmlxUpdate", j ?? [:])
+            }
+        }
         // one quiet check a few seconds in, so startup is not blocked
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             Updater.check { latest, subject in
@@ -526,6 +531,26 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                 if code != 0 && j == nil { self.toast("helper failed: \(out.prefix(120))") }
                 done(j)
             }
+        }
+    }
+
+    /// Run a bundled zsh helper and hand back its JSON.
+    func runScript(_ name: String, _ args: [String],
+                   timeoutHint: Bool = false,
+                   _ done: @escaping ([String: Any]?) -> Void) {
+        guard let script = Bundle.main.url(forResource: name, withExtension: "sh") else {
+            toast("\(name).sh missing from bundle"); return done(nil)
+        }
+        DispatchQueue.global().async {
+            var env = ProcessInfo.processInfo.environment
+            env["AI_ROOT"] = kRoot
+            let (_, out) = Updater.run("/bin/zsh", [script.path] + args, env: env)
+            // The helpers print one JSON object on the last non-empty line.
+            let line = out.split(separator: "\n").last(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+            let j = line.flatMap { String($0).data(using: .utf8) }.flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            DispatchQueue.main.async { done(j) }
         }
     }
 
@@ -712,6 +737,26 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                               ["ok": ok, "status": code, "detail": detail, "model": model])
                 }
             }.resume()
+
+        case "omlxCheck":
+            runScript("omlx-update", ["check"]) { j in
+                self.call("window.onOmlxUpdate", j ?? ["error": "check failed"])
+            }
+
+        case "omlxUpdate":
+            toast("updating oMLX to \(arg) — the server will restart…")
+            runScript("omlx-update", ["apply", arg], timeoutHint: true) { j in
+                let ok = (j?["ok"] as? Bool) ?? false
+                if ok {
+                    self.toast("oMLX \((j?["installed"] as? String) ?? "") — server \((j?["server"] as? String) ?? "")")
+                } else {
+                    self.toast("update failed: \((j?["error"] as? String) ?? "unknown")")
+                }
+                self.runScript("omlx-update", ["check"]) { c in
+                    self.call("window.onOmlxUpdate", c ?? [:])
+                }
+                self.tick()
+            }
 
         case "admin":
             NSWorkspace.shared.open(URL(string: kBase + "/admin")!)

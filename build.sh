@@ -51,6 +51,7 @@ fi
 
 cp Resources/index.html "$APP/Contents/Resources/index.html"
 cp Resources/hermes.py  "$APP/Contents/Resources/hermes.py"
+cp Resources/omlx-update.sh "$APP/Contents/Resources/omlx-update.sh"
 [[ -f Resources/AppIcon.icns ]] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep -s - "$APP" 2>/dev/null || echo "(ad-hoc signing skipped)"
 echo "built: $APP  (commit ${COMMIT:0:7})"
