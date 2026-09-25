@@ -167,11 +167,22 @@ enum Updater {
             // Swap after we exit: the running bundle cannot replace itself.
             let installed = Bundle.main.bundleURL.path
             let swap = tmp.appendingPathComponent("swap.sh")
+            // Move the old bundle aside rather than deleting it, so a failed
+            // swap can be rolled back instead of leaving no app at all.
             let sh = """
             #!/bin/zsh
             while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.3; done
-            rm -rf "\(installed)"
-            mv "\(staged.path)" "\(installed)"
+            backup="\(installed).old"
+            rm -rf "$backup"
+            if mv "\(installed)" "$backup" 2>/dev/null; then
+              if mv "\(staged.path)" "\(installed)" 2>/dev/null; then
+                rm -rf "$backup"
+              else
+                mv "$backup" "\(installed)"
+              fi
+            else
+              mv "\(staged.path)" "\(installed)"
+            fi
             sleep 0.4
             open "\(installed)"
             """
