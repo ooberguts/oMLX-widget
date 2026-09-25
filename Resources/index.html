@@ -146,6 +146,16 @@
   .res::-webkit-scrollbar{width:6px}
   .res::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
 
+  /* toggle */
+  .tog{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+  .sw{width:30px;height:17px;border-radius:20px;background:#0c0e14;border:1px solid var(--line);
+      position:relative;transition:.16s;flex:none}
+  .sw::after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;
+             background:var(--faint);transition:.16s}
+  .tog.on .sw{background:rgba(61,220,145,.22);border-color:rgba(61,220,145,.45)}
+  .tog.on .sw::after{left:15px;background:var(--ok)}
+  .ok{color:var(--ok)} .bad{color:var(--crit)} .warn{color:var(--warn)}
+
   /* connect */
   .kv{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid #ffffff0a}
   .kv:last-child{border-bottom:0}
@@ -289,26 +299,38 @@
     </div>
 
     <div class="card">
-      <div class="sechd" style="padding:0">
-        <div class="lbl">Hermes — config.yaml</div><div class="sp"></div>
-        <button class="mini cp" id="cpYaml">Copy</button>
-      </div>
-      <pre id="yaml"></pre>
-      <div class="sechd" style="padding:6px 0 0">
-        <div class="lbl">Hermes — .env</div><div class="sp"></div>
-        <button class="mini cp" id="cpEnv">Copy</button>
-      </div>
-      <pre id="envb"></pre>
-      <div class="hint">
-        Pick <b>local</b> above and Hermes never needs editing again — the
-        <b>Serve</b> button on the Models tab decides which model answers it.
-        Picking a model name instead pins Hermes to that one model.<br><br>
-        Uses the <b>lmstudio</b> provider because it speaks plain OpenAI chat
-        completions. <b>jit</b> is recommended: the default <i>explicit</i> mode first
-        probes LM Studio's native management API, which oMLX does not serve. That
-        probe fails harmlessly and oMLX auto-loads anyway, so <b>jit</b> just skips it.
+      <div class="tog" id="hTog"><div class="sw"></div>
+        <div class="lbl" style="color:var(--tx)">Hermes Agent</div></div>
+
+      <div id="hBody" style="display:none;margin-top:9px">
+        <div class="sechd" style="padding:0 0 5px"><div class="lbl">Profiles</div>
+          <div class="sp"></div><button class="mini" id="hRefresh">Refresh</button></div>
+        <div id="hProfiles"><div class="empty">loading…</div></div>
+
+        <div class="hint" id="hTarget" style="margin-top:7px"></div>
+
+        <div class="field" style="margin-top:7px">
+          <button class="mini go" id="hApply" style="flex:1">Point profile at oMLX</button>
+          <button class="mini" id="hTest">Test</button>
+        </div>
+        <div class="hint" id="hResult"></div>
+
+        <div class="sechd" style="padding:8px 0 0"><div class="lbl">Then run</div>
+          <div class="sp"></div><button class="mini cp" id="cpCmd">Copy</button></div>
+        <pre id="hCmd"></pre>
+
+        <div class="sechd" style="padding:6px 0 0"><div class="lbl">Or write it by hand</div>
+          <div class="sp"></div><button class="mini cp" id="cpYaml">Copy</button></div>
+        <pre id="yaml"></pre>
+        <div class="hint">
+          Provider is <b>omlx</b>, not lmstudio — Hermes reads a named provider
+          out of <b>providers:</b>. Writing it sets <b>model.provider</b> to match
+          and clears keys the old provider left behind, which is what caused the
+          409s. A timestamped backup is taken first.
+        </div>
       </div>
     </div>
+
   </div><!-- /paneConn -->
 
 </div>
@@ -352,7 +374,6 @@ const copy = text => send('copy', text);
 document.querySelectorAll('button[data-copy]').forEach(b =>
   b.onclick = () => copy($(b.dataset.copy).textContent));
 $('cpYaml').onclick = () => copy($('yaml').textContent);
-$('cpEnv').onclick  = () => copy($('envb').textContent);
 
 let picked = null;  // model id chosen for the Hermes snippet
 
@@ -659,6 +680,96 @@ window.onUpdate = u => {
   }
 };
 
+// ── hermes ──
+let hOn = false, hProfiles = [], hSel = null;
+
+$('cpCmd').onclick = () => copy($('hCmd').textContent);
+
+$('hTog').onclick = () => {
+  hOn = !hOn;
+  $('hTog').classList.toggle('on', hOn);
+  $('hBody').style.display = hOn ? 'block' : 'none';
+  try { localStorage.setItem('hermesOn', hOn ? '1' : '0'); } catch (e) {}
+  if (hOn) send('hermesList');
+};
+try { if (localStorage.getItem('hermesOn') === '1') $('hTog').click(); } catch (e) {}
+
+$('hRefresh').onclick = () => send('hermesList');
+
+window.onHermes = d => {
+  hProfiles = (d && d.profiles) || [];
+  if (!hProfiles.length) {
+    $('hProfiles').innerHTML = '<div class="empty">no Hermes profiles found</div>';
+    return;
+  }
+  if (!hSel || !hProfiles.some(p => p.home === hSel)) {
+    // Never preselect `default` — that is usually the primary cloud profile,
+    // and a stray click would overwrite it. Prefer one already pointed at us.
+    const pick = hProfiles.find(p => p.wired)
+              || hProfiles.find(p => (p.base_url || '').includes('127.0.0.1:8000'))
+              || hProfiles.find(p => /omlx/i.test(p.name))
+              || hProfiles.find(p => p.name !== 'default')
+              || hProfiles[0];
+    hSel = pick.home;
+  }
+  $('hProfiles').innerHTML = hProfiles.map(p => {
+    const state = p.wired ? '<span class="ok">oMLX</span>'
+                : p.provider ? `<span class="warn">${esc(p.provider)}</span>`
+                : '<span class="bad">not configured</span>';
+    return `<div class="row pick ${p.home === hSel ? 'lit' : ''}" data-home="${esc(p.home)}">
+      <div class="sdot ${p.wired ? 'on' : ''}"></div>
+      <div class="rmeta"><div class="rname">${esc(p.name)}</div>
+        <div class="rsub">${state}${p.model ? ' · ' + esc(p.model) : ''}</div></div>
+      ${p.home === hSel ? '<div class="pill">selected</div>' : ''}
+    </div>`;
+  }).join('');
+  $('hProfiles').querySelectorAll('.pick').forEach(r =>
+    r.onclick = () => { hSel = r.dataset.home; window.onHermes({profiles: hProfiles}); });
+  refreshTarget();
+};
+
+function refreshTarget() {
+  const p = hProfiles.find(x => x.home === hSel);
+  const m = picked && picked !== ALIAS ? picked : (picked === ALIAS ? ALIAS : null);
+  $('hTarget').innerHTML = p
+    ? `Will set <b>${esc(p.name)}</b> → model <b>${esc(m || 'pick one above')}</b>.` +
+      (m === ALIAS ? ' Using the alias means the Serve button keeps deciding.' : '')
+    : '';
+}
+
+let armedHome = null, armedT = null;
+$('hApply').onclick = () => {
+  const p = hProfiles.find(x => x.home === hSel);
+  if (!p) return toast('pick a profile');
+  if (!picked) return toast('pick a model in Model IDs above');
+  // Rewriting the primary profile is worth a second look.
+  if (p.name === 'default' && armedHome !== p.home) {
+    armedHome = p.home;
+    $('hApply').textContent = 'Overwrite default profile?';
+    $('hApply').className = 'mini danger';
+    clearTimeout(armedT);
+    armedT = setTimeout(() => {
+      armedHome = null;
+      $('hApply').textContent = 'Point profile at oMLX';
+      $('hApply').className = 'mini go';
+    }, 5000);
+    return;
+  }
+  armedHome = null; clearTimeout(armedT);
+  $('hApply').textContent = 'Point profile at oMLX';
+  $('hApply').className = 'mini go';
+  window.webkit.messageHandlers.bridge.postMessage(
+    {action: 'hermesApply', arg: '', home: p.home, model: picked, ctx: 0});
+};
+
+$('hTest').onclick = () => { $('hResult').textContent = ''; send('hermesTest', picked || ''); };
+
+window.onHermesTest = r => {
+  $('hResult').innerHTML = r.ok
+    ? `<span class="ok">✓ ${esc(r.model)} answered</span>`
+    : `<span class="bad">✗ HTTP ${r.status}</span> ${esc(r.detail || '')}`;
+};
+
 $('upd').onclick = () => upd ? send('applyUpdate', upd.sha) : send('checkUpdate');
 
 $('btnGet').onclick  = () => { send('download', $('repoIn').value); $('repoIn').value = ''; };
@@ -711,16 +822,25 @@ function renderConnect(ms) {
   }
 
   const model = picked || 'MODEL_ID';
+  if (typeof refreshTarget === 'function') refreshTarget();
   $('yaml').textContent =
-`model:
-  default: ${model}
-  provider: lmstudio
-  base_url: http://127.0.0.1:8000/v1
-  lmstudio_load_mode: jit`;
+`providers:
+  omlx:
+    name: oMLX
+    base_url: http://127.0.0.1:8000/v1
+    api_key: local
+    api_mode: chat_completions
+    default_model: ${model}
+model:
+  provider: omlx
+  default: ${model}`;
 
-  $('envb').textContent =
-`LM_BASE_URL=http://127.0.0.1:8000/v1
-LM_API_KEY=local`;
+  $('hCmd').textContent =
+`# point a profile at oMLX and open it
+omlx launch hermes --model ${model}
+
+# or, for a named profile
+HERMES_HOME=~/.hermes/profiles/<name> hermes chat --tui`;
 }
 </script>
 </body>

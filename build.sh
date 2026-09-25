@@ -50,6 +50,7 @@ if [[ ! -x "$APP/Contents/MacOS/OMLXWidget" ]]; then
 fi
 
 cp Resources/index.html "$APP/Contents/Resources/index.html"
+cp Resources/hermes.py  "$APP/Contents/Resources/hermes.py"
 [[ -f Resources/AppIcon.icns ]] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep -s - "$APP" 2>/dev/null || echo "(ad-hoc signing skipped)"
 echo "built: $APP  (commit ${COMMIT:0:7})"

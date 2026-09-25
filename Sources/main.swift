@@ -507,6 +507,28 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
         web.evaluateJavaScript("\(fn) && \(fn)(JSON.parse('\(esc)'))", completionHandler: nil)
     }
 
+    /// Run the bundled hermes.py helper and hand back its JSON.
+    func runHelper(_ args: [String], _ done: @escaping ([String: Any]?) -> Void) {
+        guard let script = Bundle.main.url(forResource: "hermes", withExtension: "py") else {
+            toast("hermes helper missing from bundle"); return done(nil)
+        }
+        DispatchQueue.global().async {
+            // System python3 carries PyYAML on macOS; fall back to the oMLX venv.
+            var exe = "/usr/bin/python3"
+            if !FileManager.default.isExecutableFile(atPath: exe) {
+                exe = "\(kRoot)/omlx/.venv/bin/python"
+            }
+            let (code, out) = Updater.run(exe, [script.path] + args)
+            let j = out.data(using: .utf8).flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            DispatchQueue.main.async {
+                if code != 0 && j == nil { self.toast("helper failed: \(out.prefix(120))") }
+                done(j)
+            }
+        }
+    }
+
     func toast(_ msg: String) {
         let esc = msg.replacingOccurrences(of: "'", with: "")
         web.evaluateJavaScript("window.toast && window.toast('\(esc)')", completionHandler: nil)
@@ -634,6 +656,63 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                     }
                 }
             })
+        case "hermesList":
+            runHelper(["list"]) { j in self.call("window.onHermes", j ?? ["profiles": []]) }
+
+        case "hermesApply":
+            guard let home = body["home"] as? String, let model = body["model"] as? String
+            else { return toast("pick a profile and a model") }
+            let ctx = (body["ctx"] as? Int) ?? 0
+            toast("writing \(home.split(separator: "/").last ?? "profile")…")
+            runHelper(["apply", "--home", home, "--model", model,
+                       "--base-url", "\(kBase)/v1",
+                       "--ctx", String(ctx), "--api-key", "local"]) { j in
+                let ok = (j?["ok"] as? Bool) ?? false
+                let err = (j?["error"] as? String) ?? ""
+                let warn = (j?["warning"] as? String) ?? ""
+                self.toast(ok ? (warn.isEmpty ? "configured — restart Hermes" : warn)
+                              : "failed: \(err)")
+                self.runHelper(["list"]) { l in self.call("window.onHermes", l ?? ["profiles": []]) }
+            }
+
+        case "hermesTest":
+            // Exercise the real path a client takes and report oMLX's own words.
+            let model = arg
+            toast("testing \(model)…")
+            var r = URLRequest(url: URL(string: kBase + "/v1/chat/completions")!)
+            r.httpMethod = "POST"
+            r.timeoutInterval = 300
+            r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            r.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "model": model,
+                "messages": [["role": "user", "content": "Reply with: ok"]],
+                "max_tokens": 900,
+            ])
+            URLSession.shared.dataTask(with: r) { d, resp, err in
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                var detail = ""
+                var ok = false
+                if let err = err {
+                    detail = err.localizedDescription
+                } else if let d = d,
+                          let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                    if let e = j["error"] as? [String: Any] {
+                        detail = (e["message"] as? String) ?? "\(e)"
+                    } else if let e = j["detail"] as? String {
+                        detail = e
+                    } else if let ch = j["choices"] as? [[String: Any]], !ch.isEmpty {
+                        ok = true
+                        detail = "model answered"
+                    } else {
+                        detail = String(data: d, encoding: .utf8)?.prefix(300).description ?? "?"
+                    }
+                }
+                DispatchQueue.main.async {
+                    self.call("window.onHermesTest",
+                              ["ok": ok, "status": code, "detail": detail, "model": model])
+                }
+            }.resume()
+
         case "admin":
             NSWorkspace.shared.open(URL(string: kBase + "/admin")!)
         case "pin":

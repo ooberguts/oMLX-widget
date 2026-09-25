@@ -10,14 +10,32 @@ Built with AppKit + WKWebView. No Xcode, no Electron, no dependencies — one
 
 ## Install
 
+One command sets up oMLX and the widget under `~/AI`, with models in their own
+directory. No Homebrew, nothing in system Python:
+
 ```bash
-git clone https://github.com/ooberguts/oMLX-widget.git
-cd oMLX-widget
-./build.sh
-open "$HOME/AI/apps/oMLX Widget.app"
+curl -fsSL https://raw.githubusercontent.com/ooberguts/oMLX-widget/main/install.sh | zsh
 ```
 
-Build somewhere else with `OMLX_WIDGET_APP=/Applications/"oMLX Widget.app" ./build.sh`.
+It installs `uv` and a private Python 3.12, clones and builds oMLX (with the
+Metal kernels), writes `omlxctl` and a LaunchAgent, builds the widget, and
+starts the server. The memory guard is sized from your installed RAM.
+
+| Variable | Effect |
+|---|---|
+| `AI_ROOT=/elsewhere` | install somewhere other than `~/AI` |
+| `OMLX_REF=v0.7.0.dev4` | pin an oMLX version (default: latest tag) |
+| `WITH_KERNELS=0` | skip the Metal kernel build |
+| `WIDGET_ONLY=1` | just rebuild the widget |
+
+Widget only, from a clone:
+
+```bash
+git clone https://github.com/ooberguts/oMLX-widget.git
+cd oMLX-widget && ./build.sh
+```
+
+Build elsewhere with `OMLX_WIDGET_APP=/Applications/"oMLX Widget.app" ./build.sh`.
 
 The app updates itself: it stamps the commit it was built from into its bundle,
 compares that against `main`, and can download, rebuild and hot-swap in place.
@@ -43,8 +61,24 @@ count, average/peak/low tok/s plus tokens generated since the model was loaded.
 exact repo id or Hugging Face search. **Serve** moves the `local` alias onto a
 model so clients can switch models without touching their own config.
 
-**Connect** — base URLs, API key and model ids with copy buttons, plus
-ready-to-paste config for [Hermes](https://github.com/ooberguts).
+**Connect** — base URLs, API key and model ids with copy buttons, plus a
+**Hermes Agent** panel behind a toggle.
+
+The Hermes panel lists every profile it finds — the root profile plus each
+`~/.hermes/profiles/<name>/` carrying a `SOUL.md` — and shows which provider
+and model each is on. Pick a profile and a model, and it writes a proper
+`providers.omlx` block and points `model.provider` at it, taking a timestamped
+backup first. **Test** sends a real completion and reports oMLX's own error
+text rather than a generic failure.
+
+The provider is `omlx`, not `lmstudio`. Hermes resolves named providers out of
+`providers:`, which is what oMLX's own `omlx launch hermes` writes. Pointing
+`model.provider` at a different provider without clearing the previous one's
+keys (`base_url`, `api_mode`, `lmstudio_load_mode`) is what produces HTTP 409s;
+writing the profile here clears them.
+
+`default` is never preselected, and overwriting it takes two clicks — on most
+installs that is the primary cloud profile.
 
 ## Notes
 
