@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>oMLX</title>
+<style>
+  :root{
+    --bg:#11131a; --card:#191c25; --card2:#1f2330; --line:#2a2f3d;
+    --tx:#e8ecf5; --dim:#8b93a7; --faint:#5d6478;
+    --ok:#3ddc91; --warn:#ffb545; --crit:#ff5f6d; --acc:#5b9dff;
+    --r:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--tx);
+    user-select:none; -webkit-user-select:none; cursor:default;
+    font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  .drag{height:26px;flex:none;display:flex;align-items:center;justify-content:center}
+  .drag::after{content:'';flex:0 0 34px;height:3.5px;border-radius:3px;background:#ffffff1f}
+  .drag:hover::after{background:#ffffff33}
+  .wrap{flex:1;overflow-y:auto;padding:0 12px 12px;display:flex;flex-direction:column;gap:9px}
+  .wrap::-webkit-scrollbar{width:7px}
+  .wrap::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+
+  /* header */
+  header{display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none;
+       box-shadow:0 0 0 0 rgba(61,220,145,.55)}
+  .dot.on{background:var(--ok);animation:pulse 2.4s infinite}
+  .dot.busy{background:var(--warn)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(61,220,145,.5)}70%{box-shadow:0 0 0 7px rgba(61,220,145,0)}100%{box-shadow:0 0 0 0 rgba(61,220,145,0)}}
+  .brand{font-weight:650;font-size:14px;letter-spacing:.2px}
+  .state{color:var(--dim);font-size:11px;margin-left:-2px}
+  header .sp{flex:1}
+
+  button{
+    font:inherit;font-size:11px;font-weight:600;color:var(--tx);
+    background:var(--card2);border:1px solid var(--line);border-radius:7px;
+    padding:4px 10px;cursor:pointer;transition:.12s;white-space:nowrap;
+  }
+  button:hover{background:#282e3d;border-color:#39415380}
+  button:active{transform:translateY(1px)}
+  button.go{background:rgba(61,220,145,.14);border-color:rgba(61,220,145,.35);color:var(--ok)}
+  button.go:hover{background:rgba(61,220,145,.22)}
+  button.stop{background:rgba(255,95,109,.13);border-color:rgba(255,95,109,.33);color:var(--crit)}
+  button.stop:hover{background:rgba(255,95,109,.2)}
+  button.mini{padding:3px 8px;font-size:10px}
+  button.on{background:rgba(91,157,255,.18);border-color:rgba(91,157,255,.4);color:var(--acc)}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px}
+  .lbl{font-size:10px;font-weight:650;letter-spacing:.7px;text-transform:uppercase;color:var(--faint)}
+
+  /* memory */
+  .memtop{display:flex;align-items:baseline;gap:6px;margin-bottom:7px}
+  .memnum{font-size:19px;font-weight:660;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .memof{font-size:11px;color:var(--dim)}
+  .memtop .sp{flex:1}
+  .chip{font-size:10px;font-weight:650;padding:2px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+  .chip.ok{background:rgba(61,220,145,.14);color:var(--ok)}
+  .chip.warn{background:rgba(255,181,69,.15);color:var(--warn)}
+  .chip.crit{background:rgba(255,95,109,.15);color:var(--crit)}
+  .bar{height:7px;border-radius:5px;background:#0c0e14;position:relative;overflow:hidden}
+  .fill{height:100%;border-radius:5px;background:linear-gradient(90deg,#3ddc91,#35c4d8);
+        width:0;transition:width .45s cubic-bezier(.4,0,.2,1)}
+  .fill.warn{background:linear-gradient(90deg,#ffb545,#ff8f3c)}
+  .fill.crit{background:linear-gradient(90deg,#ff5f6d,#ff3b6b)}
+  .soft{position:absolute;top:-2px;bottom:-2px;width:2px;background:#ffffff40;border-radius:2px}
+  .memfoot{display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:8px 6px;text-align:center}
+  .stat b{display:block;font-size:17px;font-weight:660;font-variant-numeric:tabular-nums;line-height:1.15}
+  .stat span{font-size:9.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+
+  /* rows */
+  .sec{display:flex;flex-direction:column;gap:6px}
+  .sechd{display:flex;align-items:center;gap:6px;padding:0 2px}
+  .sechd .sp{flex:1}
+  .row{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:8px 9px;
+       display:flex;align-items:center;gap:8px}
+  .row.lit{border-color:rgba(61,220,145,.3);background:linear-gradient(180deg,rgba(61,220,145,.05),transparent),var(--card)}
+  .rmeta{min-width:0;flex:1}
+  .rname{font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rsub{font-size:10px;color:var(--faint);margin-top:1.5px;font-variant-numeric:tabular-nums;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sdot{width:6px;height:6px;border-radius:50%;background:var(--faint);flex:none}
+  .sdot.on{background:var(--ok)}
+  .sdot.load{background:var(--warn);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  /* per-model stats strip */
+  .mstat{display:flex;flex-wrap:wrap;gap:3px 9px;margin-top:4px;
+         font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .mstat b{color:var(--dim);font-weight:650}
+  .mstat .hot{color:var(--ok)}
+  .mstat .ext{cursor:pointer}
+  .mstat .ext:hover b{color:var(--crit)}
+  .mstat .live b{color:var(--acc)}
+
+  /* download */
+  .dl .bar{height:4px;margin-top:6px}
+  .dlfill{height:100%;border-radius:5px;background:linear-gradient(90deg,#5b9dff,#8b7bff);width:0;transition:width .5s}
+
+  .empty{color:var(--faint);font-size:11px;text-align:center;padding:14px 8px;
+         border:1px dashed var(--line);border-radius:var(--r)}
+
+  footer{display:flex;gap:6px;align-items:center;padding-top:2px}
+  footer .sp{flex:1}
+
+  /* tabs */
+  .tabs{display:flex;gap:3px;background:var(--card);border:1px solid var(--line);
+        border-radius:9px;padding:3px}
+  .tab{flex:1;text-align:center;font-size:11px;font-weight:650;padding:5px 0;border-radius:6px;
+       color:var(--dim);cursor:pointer;transition:.13s;user-select:none}
+  .tab:hover{color:var(--tx)}
+  .tab.sel{background:var(--card2);color:var(--tx);box-shadow:0 1px 3px #0006}
+
+  /* graphs */
+  .graphs{display:flex;flex-direction:column;gap:7px}
+  .graph{padding:8px 9px 5px}
+  .gtop{display:flex;align-items:baseline;gap:6px;margin-bottom:2px}
+  .gtop .sp{flex:1}
+  .gval{font-size:15px;font-weight:660;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+  .gsub{font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .gsvg{display:block;width:100%;height:40px;overflow:visible}
+  .gline{fill:none;stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+  .garea{stroke:none;opacity:.16}
+
+  /* models tab */
+  .field{display:flex;gap:5px}
+  input[type=text]{
+    flex:1;min-width:0;font:inherit;font-size:11px;color:var(--tx);
+    background:#0c0e14;border:1px solid var(--line);border-radius:7px;padding:5px 8px;
+    outline:none;user-select:text;-webkit-user-select:text}
+  input[type=text]:focus{border-color:#3d465c}
+  input[type=text]::placeholder{color:var(--faint)}
+  button.danger{background:rgba(255,95,109,.12);border-color:rgba(255,95,109,.3);color:var(--crit)}
+  button.danger:hover{background:rgba(255,95,109,.2)}
+  .res{max-height:184px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+  .res::-webkit-scrollbar{width:6px}
+  .res::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+
+  /* connect */
+  .kv{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid #ffffff0a}
+  .kv:last-child{border-bottom:0}
+  .kvk{font-size:10px;color:var(--faint);font-weight:650;width:60px;flex:none;
+       text-transform:uppercase;letter-spacing:.4px}
+  .kvv{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
+       color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cp{flex:none;padding:2px 7px;font-size:9.5px}
+  pre{background:#0c0e14;border:1px solid var(--line);border-radius:7px;padding:8px 9px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;line-height:1.5;
+      color:#c8d2e6;overflow-x:auto;white-space:pre;margin-top:6px}
+  pre::-webkit-scrollbar{height:6px}
+  pre::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  pre,.kvv{user-select:text;-webkit-user-select:text;cursor:text}
+  .hint{font-size:10px;color:var(--faint);line-height:1.45;margin-top:6px}
+  .pick{cursor:pointer}
+  .pick:hover .rname{color:var(--acc)}
+  .pill{font-size:9px;font-weight:700;padding:1.5px 6px;border-radius:20px;
+        background:rgba(91,157,255,.18);color:var(--acc);letter-spacing:.3px}
+
+  button#upd.avail{background:rgba(91,157,255,.18);border-color:rgba(91,157,255,.45);
+                   color:var(--acc);animation:nudge 2.6s ease-in-out infinite}
+  @keyframes nudge{0%,100%{opacity:1}50%{opacity:.62}}
+
+  #toast{position:fixed;left:12px;right:12px;bottom:10px;background:#252b3aee;border:1px solid var(--line);
+         border-radius:8px;padding:7px 10px;font-size:11px;color:var(--tx);opacity:0;
+         transform:translateY(6px);transition:.22s;pointer-events:none;backdrop-filter:blur(12px);
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #toast.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="drag"></div>
+<div class="wrap">
+
+  <header>
+    <div class="dot" id="dot"></div>
+    <div>
+      <div class="brand">oMLX</div>
+      <div class="state" id="state">connecting…</div>
+    </div>
+    <div class="sp"></div>
+    <button id="pwr" class="go">Start</button>
+  </header>
+
+  <div class="tabs">
+    <div class="tab sel" id="tMon">Monitor</div>
+    <div class="tab" id="tMod">Models</div>
+    <div class="tab" id="tConn">Connect</div>
+  </div>
+
+  <div id="paneMon" style="display:flex;flex-direction:column;gap:9px">
+
+  <div class="card" id="memcard">
+    <div class="memtop">
+      <div class="memnum" id="memnum">—</div>
+      <div class="memof" id="memof"></div>
+      <div class="sp"></div>
+      <div class="chip ok" id="press">ok</div>
+    </div>
+    <div class="bar"><div class="fill" id="memfill"></div><div class="soft" id="softmk" style="display:none"></div></div>
+    <div class="memfoot"><span id="softlbl"></span><span id="hardlbl"></span></div>
+  </div>
+
+  <div class="graphs">
+    <div class="card graph">
+      <div class="gtop"><div class="lbl">GPU</div><div class="sp"></div>
+        <div class="gval" id="gpuVal">—</div><div class="gsub">%</div></div>
+      <svg class="gsvg" id="gpuSvg" viewBox="0 0 300 40" preserveAspectRatio="none">
+        <path class="garea" id="gpuArea" fill="var(--acc)"></path>
+        <path class="gline" id="gpuLine" stroke="var(--acc)"></path>
+      </svg>
+    </div>
+    <div class="card graph">
+      <div class="gtop"><div class="lbl">Tokens / sec</div><div class="sp"></div>
+        <div class="gval" id="tpsVal">—</div><div class="gsub" id="tpsPeak"></div></div>
+      <svg class="gsvg" id="tpsSvg" viewBox="0 0 300 40" preserveAspectRatio="none">
+        <path class="garea" id="tpsArea" fill="var(--ok)"></path>
+        <path class="gline" id="tpsLine" stroke="var(--ok)"></path>
+      </svg>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><b id="sActive">0</b><span>Active</span></div>
+    <div class="stat"><b id="sQueue">0</b><span>Queued</span></div>
+    <div class="stat"><b id="sLoaded">0</b><span>Loaded</span></div>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><div class="lbl">Models</div><div class="sp"></div><div class="lbl" id="mcount"></div></div>
+    <div id="models"><div class="empty">no models yet</div></div>
+  </div>
+
+  </div><!-- /paneMon -->
+
+  <div id="paneMod" style="display:none;flex-direction:column;gap:9px">
+    <div class="sec" id="dlsec" style="display:none">
+      <div class="sechd"><div class="lbl">Downloading</div></div>
+      <div id="dls"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sechd"><div class="lbl">On disk</div><div class="sp"></div>
+        <div class="lbl" id="diskTotal"></div></div>
+      <div id="localModels"><div class="empty">no models</div></div>
+    </div>
+
+    <div class="card">
+      <div class="lbl" style="margin-bottom:6px">Add a model</div>
+      <div class="field">
+        <input type="text" id="repoIn" placeholder="org/repo-name  or  search terms"
+               autocomplete="off" spellcheck="false">
+        <button class="mini" id="btnGet">Get</button>
+        <button class="mini" id="btnFind">Find</button>
+      </div>
+      <div class="hint"><b>Get</b> downloads an exact repo id.
+        <b>Find</b> searches Hugging Face for MLX models.</div>
+      <div class="res" id="searchRes" style="margin-top:7px"></div>
+    </div>
+  </div><!-- /paneMod -->
+
+  <div id="paneConn" style="display:none;flex-direction:column;gap:9px">
+    <div class="card">
+      <div class="lbl" style="margin-bottom:4px">Endpoints</div>
+      <div class="kv"><div class="kvk">OpenAI</div>
+        <div class="kvv" id="cOai">http://127.0.0.1:8000/v1</div>
+        <button class="mini cp" data-copy="cOai">Copy</button></div>
+      <div class="kv"><div class="kvk">Anthropic</div>
+        <div class="kvv" id="cAnt">http://127.0.0.1:8000</div>
+        <button class="mini cp" data-copy="cAnt">Copy</button></div>
+      <div class="kv"><div class="kvk">API key</div>
+        <div class="kvv" id="cKey">local</div>
+        <button class="mini cp" data-copy="cKey">Copy</button></div>
+    </div>
+
+    <div class="sec">
+      <div class="sechd"><div class="lbl">Model IDs</div><div class="sp"></div>
+        <div class="lbl">tap to select</div></div>
+      <div id="cModels"><div class="empty">no models</div></div>
+    </div>
+
+    <div class="card">
+      <div class="sechd" style="padding:0">
+        <div class="lbl">Hermes — config.yaml</div><div class="sp"></div>
+        <button class="mini cp" id="cpYaml">Copy</button>
+      </div>
+      <pre id="yaml"></pre>
+      <div class="sechd" style="padding:6px 0 0">
+        <div class="lbl">Hermes — .env</div><div class="sp"></div>
+        <button class="mini cp" id="cpEnv">Copy</button>
+      </div>
+      <pre id="envb"></pre>
+      <div class="hint">
+        Pick <b>local</b> above and Hermes never needs editing again — the
+        <b>Serve</b> button on the Models tab decides which model answers it.
+        Picking a model name instead pins Hermes to that one model.<br><br>
+        Uses the <b>lmstudio</b> provider because it speaks plain OpenAI chat
+        completions. <b>jit</b> is recommended: the default <i>explicit</i> mode first
+        probes LM Studio's native management API, which oMLX does not serve. That
+        probe fails harmlessly and oMLX auto-loads anyway, so <b>jit</b> just skips it.
+      </div>
+    </div>
+  </div><!-- /paneConn -->
+
+</div>
+
+<footer style="padding:0 12px 12px">
+  <button class="mini" onclick="send('admin')">Admin</button>
+  <button class="mini" onclick="send('logs')">Logs</button>
+  <button class="mini" id="upd" title="check for updates">v…</button>
+  <div class="sp"></div>
+  <button class="mini" id="pin">Pin</button>
+</footer>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const send = (action, arg='') =>
+  window.webkit.messageHandlers.bridge.postMessage({action, arg});
+
+let up = false, pinned = false;
+
+$('pwr').onclick = () => send(up ? 'stop' : 'start');
+$('pin').onclick = () => {
+  pinned = !pinned;
+  $('pin').classList.toggle('on', pinned);
+  send('pin', pinned ? '1' : '0');
+};
+
+// ── tabs ──
+const panes = {tMon:'paneMon', tMod:'paneMod', tConn:'paneConn'};
+Object.keys(panes).forEach(t => $(t).onclick = () => {
+  Object.entries(panes).forEach(([tab, pane]) => {
+    const on = tab === t;
+    $(tab).classList.toggle('sel', on);
+    $(pane).style.display = on ? 'flex' : 'none';
+  });
+});
+
+// ── copy ──
+const copy = text => send('copy', text);
+document.querySelectorAll('button[data-copy]').forEach(b =>
+  b.onclick = () => copy($(b.dataset.copy).textContent));
+$('cpYaml').onclick = () => copy($('yaml').textContent);
+$('cpEnv').onclick  = () => copy($('envb').textContent);
+
+let picked = null;  // model id chosen for the Hermes snippet
+
+// ── graphs ──
+const NPTS = 60;                      // ~90s of history at the 1.5s poll
+const hist = {gpu: [], tps: []};
+
+function spark(lineId, areaId, data, max) {
+  const W = 300, H = 40;
+  if (data.length < 2) { $(lineId).setAttribute('d',''); $(areaId).setAttribute('d',''); return; }
+  const top = Math.max(max, 1);
+  const pts = data.map((v, i) => {
+    const x = i / (NPTS - 1) * W;
+    const y = H - 1 - Math.min(1, Math.max(0, v / top)) * (H - 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  $(lineId).setAttribute('d', 'M' + pts.join(' L'));
+  const lastX = (data.length - 1) / (NPTS - 1) * W;
+  $(areaId).setAttribute('d', `M${pts.join(' L')} L${lastX.toFixed(1)},${H} L0,${H} Z`);
+}
+
+function pushHist(key, v) {
+  hist[key].push(v);
+  if (hist[key].length > NPTS) hist[key].shift();
+}
+
+function renderGraphs(s) {
+  // GPU — fixed 0-100 scale so the shape is comparable over time
+  const g = typeof s.gpu === 'number' ? s.gpu : null;
+  if (g !== null) { pushHist('gpu', g); $('gpuVal').textContent = Math.round(g); }
+  else $('gpuVal').textContent = '—';
+  spark('gpuLine', 'gpuArea', hist.gpu, 100);
+
+  // TPS — live decode rate reported per in-flight request. The cumulative
+  // token counters only move when a request *finishes*, which would make the
+  // graph flatline then spike; these are sampled continuously during decode.
+  let tps = 0;
+  for (const m of (s.activity && s.activity.models) || [])
+    for (const g of (m.generating || []))
+      tps += g.tokens_per_second || 0;
+
+  pushHist('tps', tps);
+  $('tpsVal').textContent = tps >= 10 ? tps.toFixed(0) : (tps > 0 ? tps.toFixed(1) : '0');
+
+  const peak = hist.tps.length ? Math.max(...hist.tps) : 0;
+  const avg = s.stats && s.stats.avg_gen_tps;
+  $('tpsPeak').textContent = peak > 0 ? `peak ${peak.toFixed(0)}`
+                           : (avg ? `avg ${Number(avg).toFixed(0)}` : '');
+  spark('tpsLine', 'tpsArea', hist.tps, Math.max(peak, 10));
+}
+
+const gb = b => (b/1073741824).toFixed(1) + ' GB';
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let toastT;
+window.toast = msg => {
+  if (!msg) return;
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove('show'), 2600);
+};
+
+window.render = s => {
+  up = !!s.up;
+  if (s.alias) ALIAS = s.alias;
+
+  // ── header ──
+  $('dot').className = 'dot' + (up ? ' on' : '');
+  $('pwr').textContent = up ? 'Stop' : 'Start';
+  $('pwr').className = up ? 'stop' : 'go';
+
+  const act = s.activity || null;
+  const ms  = (s.models && s.models.models) || [];
+
+  if (!up) {
+    $('state').textContent = 'server stopped';
+    $('memnum').textContent = '—';
+    $('memof').textContent = '';
+    $('memfill').style.width = '0%';
+    $('softmk').style.display = 'none';
+    $('softlbl').textContent = ''; $('hardlbl').textContent = '';
+    $('press').textContent = 'offline'; $('press').className = 'chip';
+    $('sActive').textContent = $('sQueue').textContent = $('sLoaded').textContent = '0';
+    $('models').innerHTML = '<div class="empty">server stopped</div>';
+    $('mcount').textContent = '';
+    $('dlsec').style.display = 'none';
+    $('localModels').innerHTML = '<div class="empty">server stopped</div>';
+    $('diskTotal').textContent = '';
+    pushHist('tps', 0);            // renderGraphs pushes the GPU sample itself
+  renderGraphs(s);
+    return;
+  }
+
+  // ── memory ──
+  if (act && act.memory_pressure) {
+    const mp = act.memory_pressure;
+    const cur = mp.current_bytes, hard = mp.hard_bytes || 1, soft = mp.soft_bytes || 0;
+    const pct = Math.min(100, cur / hard * 100);
+    const lvl = mp.pressure_level || 'ok';
+    $('memnum').textContent = mp.current_formatted || gb(cur);
+    $('memof').textContent  = 'of ' + (mp.hard_formatted || gb(hard));
+    $('memfill').style.width = pct.toFixed(1) + '%';
+    $('memfill').className = 'fill' + (lvl === 'ok' ? '' : ' ' + (lvl === 'critical' ? 'crit' : 'warn'));
+    $('press').textContent = lvl;
+    $('press').className = 'chip ' + (lvl === 'ok' ? 'ok' : lvl === 'critical' ? 'crit' : 'warn');
+    const sm = $('softmk');
+    sm.style.display = 'block';
+    sm.style.left = Math.min(100, soft / hard * 100).toFixed(1) + '%';
+    $('softlbl').textContent = 'soft ' + (mp.soft_formatted || gb(soft));
+    $('hardlbl').textContent = 'cap '  + (mp.hard_formatted || gb(hard));
+    $('state').textContent = 'running · ' + (mp.current_formatted || gb(cur)) + ' in use';
+  } else {
+    $('state').textContent = 'running';
+  }
+
+  // ── counters ──
+  $('sActive').textContent = act ? (act.total_active_requests  || 0) : 0;
+  $('sQueue').textContent  = act ? (act.total_waiting_requests || 0) : 0;
+  $('sLoaded').textContent = ms.filter(m => m.loaded).length;
+
+  // ── downloads ──
+  const tasks = (s.tasks || []).filter(t => ['downloading','pending','retrying'].includes(t.status));
+  $('dlsec').style.display = tasks.length ? 'flex' : 'none';
+  $('dls').innerHTML = tasks.map(t => {
+    const got = t.downloaded_size || 0, tot = t.total_size || 0;
+    // oMLX reports progress as 0-100, not a 0-1 fraction; prefer exact bytes.
+    const pc = Math.max(0, Math.min(100, Math.round(tot ? got / tot * 100 : (t.progress || 0))));
+    const sub = tot ? `${gb(got)} / ${gb(tot)} · ${pc}%` : t.status;
+    return `<div class="row dl" style="display:block">
+      <div class="rname">${esc(t.repo_id)}</div>
+      <div class="rsub">${esc(sub)}</div>
+      <div class="bar"><div class="dlfill" style="width:${pc}%"></div></div>
+    </div>`;
+  }).join('');
+
+  const per = s.per || {};
+  renderGraphs(s);
+  renderModels(ms, s.tasks || []);
+  renderConnect(ms);
+
+  // ── models ──
+  $('mcount').textContent = ms.length ? ms.length + ' found' : '';
+  if (!ms.length) {
+    $('models').innerHTML = '<div class="empty">no models in ~/AI/models</div>';
+    return;
+  }
+  ms.sort((a, b) => (b.loaded - a.loaded) || a.id.localeCompare(b.id));
+  $('models').innerHTML = ms.map(m => {
+    const size = m.actual_size || m.resident_estimated_size || m.estimated_size || 0;
+    const cls  = m.is_loading ? 'load' : (m.loaded ? 'on' : '');
+    const bits = [];
+    if (size) bits.push(gb(size));
+    if (m.model_type) bits.push(m.model_type);
+    if (m.max_context_window) bits.push((m.max_context_window/1024|0) + 'K ctx');
+    const btn = m.is_loading
+      ? '<button class="mini" disabled>…</button>'
+      : m.loaded
+        ? `<button class="mini" onclick="send('unload','${esc(m.id)}')">Unload</button>`
+        : `<button class="mini" onclick="send('load','${esc(m.id)}')">Load</button>`;
+    return `<div class="row ${m.loaded ? 'lit' : ''}">
+      <div class="sdot ${cls}"></div>
+      <div class="rmeta">
+        <div class="rname">${esc(m.id)}</div>
+        <div class="rsub">${esc(bits.join(' · ') || '—')}</div>
+        ${statStrip(m.id, per[m.id])}
+      </div>${btn}
+    </div>`;
+  }).join('');
+
+  $('models').querySelectorAll('[data-reset]').forEach(e =>
+    e.onclick = () => send('resetStats', e.dataset.reset));
+};
+
+let ALIAS = 'local';     // overwritten from the snapshot
+let confirming = null;   // model id currently awaiting a second Delete click
+let confirmT = null;
+
+// compact token counts: 1234 -> 1.2k, 1234567 -> 1.23M
+const nfmt = n => {
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(Math.round(n));
+};
+
+function statStrip(id, p) {
+  if (!p) return '';
+  const bits = [];
+  bits.push(`<span><b>${nfmt(p.completion)}</b> tok lifetime</span>`);
+  if (p.requests) bits.push(`<span><b>${nfmt(p.requests)}</b> req</span>`);
+  if (p.avg) bits.push(`<span>avg <b>${Number(p.avg).toFixed(0)}</b></span>`);
+  if (p.peak) bits.push(
+    `<span class="ext" data-reset="${esc(id)}" title="click to reset peak/low">` +
+    `pk <b class="hot">${Number(p.peak).toFixed(0)}</b>` +
+    (p.low ? ` · lo <b>${Number(p.low).toFixed(0)}</b>` : '') + `</span>`);
+  if (p.since_load !== undefined)
+    bits.push(`<span class="live">+<b>${nfmt(p.since_load)}</b> this load</span>`);
+  return `<div class="mstat">${bits.join('')}</div>`;
+}
+
+function renderModels(ms, tasks) {
+  // active downloads
+  const live = tasks.filter(t => ['downloading','pending','retrying'].includes(t.status));
+  $('dlsec').style.display = live.length ? 'flex' : 'none';
+  $('dls').innerHTML = live.map(t => {
+    const got = t.downloaded_size || 0, tot = t.total_size || 0;
+    const pc = Math.max(0, Math.min(100, Math.round(tot ? got / tot * 100 : (t.progress || 0))));
+    return `<div class="row dl" style="display:block">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="rmeta"><div class="rname">${esc(t.repo_id)}</div>
+        <div class="rsub">${tot ? `${gb(got)} / ${gb(tot)} · ${pc}%` : esc(t.status)}</div></div>
+        <button class="mini danger" data-cancel="${esc(t.task_id)}">Stop</button>
+      </div>
+      <div class="bar"><div class="dlfill" style="width:${pc}%"></div></div>
+    </div>`;
+  }).join('');
+  $('dls').querySelectorAll('[data-cancel]').forEach(b =>
+    b.onclick = () => send('cancel', b.dataset.cancel));
+
+  // on-disk models
+  if (!ms.length) {
+    $('localModels').innerHTML = '<div class="empty">no models in ~/AI/models</div>';
+    $('diskTotal').textContent = '';
+    return;
+  }
+  const total = ms.reduce((a, m) => a + (m.estimated_size || 0), 0);
+  $('diskTotal').textContent = total ? gb(total) : '';
+  $('localModels').innerHTML = ms.map(m => {
+    const size = m.estimated_size || m.actual_size || 0;
+    const armed = confirming === m.id;
+    const serving = m.model_alias === ALIAS;
+    return `<div class="row ${m.loaded ? 'lit' : ''}">
+      <div class="sdot ${m.loaded ? 'on' : ''}"></div>
+      <div class="rmeta">
+        <div class="rname">${esc(m.id)}</div>
+        <div class="rsub">${size ? gb(size) : '—'}${m.loaded ? ' · loaded' : ''}</div>
+      </div>
+      ${serving ? `<div class="pill">${esc(ALIAS)}</div>`
+                : `<button class="mini" data-serve="${esc(m.id)}">Serve</button>`}
+      <button class="mini ${armed ? 'danger' : ''}" data-del="${esc(m.id)}">${armed ? 'Sure?' : 'Delete'}</button>
+    </div>`;
+  }).join('');
+  $('localModels').querySelectorAll('[data-serve]').forEach(b =>
+    b.onclick = () => send('serve', b.dataset.serve));
+  $('localModels').querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const id = b.dataset.del;
+    if (confirming === id) {                 // second click — do it
+      clearTimeout(confirmT); confirming = null;
+      send('delete', id);
+    } else {                                 // first click — arm, then disarm
+      confirming = id;
+      renderModels(ms, tasks);
+      clearTimeout(confirmT);
+      confirmT = setTimeout(() => { confirming = null; renderModels(ms, tasks); }, 4000);
+    }
+  });
+}
+
+// search results come back from Swift
+window.onSearch = list => {
+  if (!Array.isArray(list) || !list.length) {
+    $('searchRes').innerHTML = '<div class="empty">no MLX models matched</div>';
+    return;
+  }
+  $('searchRes').innerHTML = list.map(r => `
+    <div class="row">
+      <div class="rmeta">
+        <div class="rname">${esc(r.repo_id)}</div>
+        <div class="rsub">${esc(r.size_formatted || '?')} · ${esc(r.params_formatted || '?')} · ${(r.downloads||0).toLocaleString()} dl</div>
+      </div>
+      <button class="mini" data-dl="${esc(r.repo_id)}">Get</button>
+    </div>`).join('');
+  $('searchRes').querySelectorAll('[data-dl]').forEach(b =>
+    b.onclick = () => { send('download', b.dataset.dl); b.textContent = '…'; b.disabled = true; });
+};
+
+// ── updater ──
+let upd = null;   // populated by window.onUpdate
+
+window.onVersion = v => {
+  if (!upd) $('upd').textContent = 'v' + v.version;
+  $('upd').title = `version ${v.version} · build ${v.commit} — click to check for updates`;
+};
+
+window.onUpdate = u => {
+  if (u.error) { toast(u.error); return; }
+  if (u.available) {
+    upd = u;
+    $('upd').textContent = 'Update';
+    $('upd').classList.add('avail');
+    $('upd').title = `${u.current} → ${u.latest}` + (u.subject ? ` — ${u.subject}` : '') +
+                     '  (click to install and restart)';
+    toast('update available: ' + u.latest);
+  } else {
+    upd = null;
+    $('upd').classList.remove('avail');
+    $('upd').textContent = 'v' + (u.version || '');
+    $('upd').title = u.unknown
+      ? 'this build has no commit stamp — rebuild from a git clone to enable updates'
+      : `up to date (${u.current})`;
+    toast(u.unknown ? 'no commit stamp — updates disabled' : 'up to date');
+  }
+};
+
+$('upd').onclick = () => upd ? send('applyUpdate', upd.sha) : send('checkUpdate');
+
+$('btnGet').onclick  = () => { send('download', $('repoIn').value); $('repoIn').value = ''; };
+$('btnFind').onclick = () => send('search', $('repoIn').value);
+$('repoIn').onkeydown = e => {
+  if (e.key !== 'Enter') return;
+  // a slash means it is a repo id, otherwise treat it as a search
+  $('repoIn').value.includes('/') ? $('btnGet').onclick() : $('btnFind').onclick();
+};
+
+function renderConnect(ms) {
+  const ids = ms.map(m => m.id);
+  const holder = (ms.find(m => m.model_alias === ALIAS) || {}).id;
+
+  if (!ids.length) {
+    $('cModels').innerHTML = '<div class="empty">no models</div>';
+    picked = null;
+  } else {
+    // Default to the alias: the config never has to change, the Serve
+    // button on the Models tab decides which model answers.
+    if (!picked || (picked !== ALIAS && !ids.includes(picked))) picked = ALIAS;
+
+    const aliasRow = `
+      <div class="row pick ${picked === ALIAS ? 'lit' : ''}" data-id="${esc(ALIAS)}">
+        <div class="sdot ${holder ? 'on' : ''}"></div>
+        <div class="rmeta"><div class="rname">${esc(ALIAS)}</div>
+          <div class="rsub">${holder ? '→ ' + esc(holder) : 'no model serving — pick one on Models'}</div></div>
+        ${picked === ALIAS ? '<div class="pill">default</div>' : ''}
+        <button class="mini cp" data-mid="${esc(ALIAS)}">Copy</button>
+      </div>`;
+
+    $('cModels').innerHTML = aliasRow + ms.map(m => `
+      <div class="row pick ${m.id === picked ? 'lit' : ''}" data-id="${esc(m.id)}">
+        <div class="sdot ${m.loaded ? 'on' : ''}"></div>
+        <div class="rmeta"><div class="rname">${esc(m.id)}</div>
+          <div class="rsub">pins this exact model</div></div>
+        ${m.id === picked ? '<div class="pill">default</div>' : ''}
+        <button class="mini cp" data-mid="${esc(m.id)}">Copy</button>
+      </div>`).join('');
+
+    $('cModels').querySelectorAll('.pick').forEach(r => {
+      r.onclick = e => {
+        if (e.target.dataset.mid) return;     // the Copy button handles itself
+        picked = r.dataset.id;
+        renderConnect(ms);
+      };
+    });
+    $('cModels').querySelectorAll('button[data-mid]').forEach(b =>
+      b.onclick = e => { e.stopPropagation(); copy(b.dataset.mid); });
+  }
+
+  const model = picked || 'MODEL_ID';
+  $('yaml').textContent =
+`model:
+  default: ${model}
+  provider: lmstudio
+  base_url: http://127.0.0.1:8000/v1
+  lmstudio_load_mode: jit`;
+
+  $('envb').textContent =
+`LM_BASE_URL=http://127.0.0.1:8000/v1
+LM_API_KEY=local`;
+}
+</script>
+</body>
+</html>
