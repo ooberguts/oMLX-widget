@@ -74,22 +74,44 @@ git -C "$OSRC" checkout --quiet "$REF"
 say "creating the virtualenv"
 uv venv --python 3.12 "$AI_ROOT/omlx/.venv" >/dev/null
 
-# Metal kernels are opt-in and need cmake+ninja; without them Bonsai and the
-# Qwen prefill path fall back to slower generic code.
+# oMLX's Metal kernels (Bonsai ternary decode, Qwen3.5 prefill and friends) are
+# opt-in. They need cmake + ninja *and* the Metal shader compiler, which ships
+# with full Xcode — the Command Line Tools alone do not include it.
 KERNEL_ENV=()
-if [[ "${WITH_KERNELS:-1}" == "1" ]]; then
-  say "installing cmake + ninja for the Metal kernels"
-  VIRTUAL_ENV="$AI_ROOT/omlx/.venv" uv pip install --quiet cmake ninja || warn "cmake/ninja failed; skipping kernels"
-  if VIRTUAL_ENV="$AI_ROOT/omlx/.venv" uv pip show cmake >/dev/null 2>&1; then
-    KERNEL_ENV=(OMLX_WITH_CUSTOM_KERNEL=1)
-    say "building oMLX with Metal kernels (this takes a few minutes)"
-  fi
+if [[ "${WITH_KERNELS:-1}" != "1" ]]; then
+  say "installing oMLX without Metal kernels (WITH_KERNELS=0)"
+elif ! xcrun -sdk macosx metal --version >/dev/null 2>&1; then
+  warn "Metal compiler not found — skipping the custom kernels."
+  warn "They need full Xcode, not just the Command Line Tools. Without them"
+  warn "oMLX still works, but Bonsai/ternary models fall back to slower paths."
+  warn "To add them later: install Xcode, then"
+  warn "  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+  warn "  WITH_KERNELS=1 curl -fsSL <installer> | zsh"
 else
-  say "installing oMLX without Metal kernels"
+  say "installing cmake + ninja for the Metal kernels"
+  if VIRTUAL_ENV="$AI_ROOT/omlx/.venv" uv pip install --quiet cmake ninja; then
+    KERNEL_ENV=(OMLX_WITH_CUSTOM_KERNEL=1)
+    say "building oMLX with Metal kernels (several minutes)"
+  else
+    warn "cmake/ninja unavailable — skipping kernels"
+  fi
 fi
-env "${KERNEL_ENV[@]}" VIRTUAL_ENV="$AI_ROOT/omlx/.venv" \
-  PATH="$AI_ROOT/omlx/.venv/bin:$PATH" \
-  uv pip install --quiet -e "$OSRC" || die "oMLX install failed"
+
+install_omlx() {
+  env "$@" VIRTUAL_ENV="$AI_ROOT/omlx/.venv" \
+    PATH="$AI_ROOT/omlx/.venv/bin:$PATH" \
+    uv pip install --quiet -e "$OSRC"
+}
+
+if ! install_omlx "${KERNEL_ENV[@]}"; then
+  if (( ${#KERNEL_ENV[@]} )); then
+    # A kernel build failure must not leave a half-installed tree.
+    warn "kernel build failed — retrying without the custom kernels"
+    install_omlx || die "oMLX install failed"
+  else
+    die "oMLX install failed"
+  fi
+fi
 
 # ── control script ───────────────────────────────────────────────────────────
 say "writing omlxctl"
@@ -127,8 +149,22 @@ CTL
 chmod +x "$AI_ROOT/omlx/bin/omlxctl"
 
 # ── launch agent ─────────────────────────────────────────────────────────────
+# One label per machine. If an agent already exists for a *different* root,
+# refuse rather than hijack the server that is already running.
+PLIST_PATH="$HOME/Library/LaunchAgents/ai.omlx.server.plist"
+if [[ "${SKIP_SERVICE:-0}" == "1" ]]; then
+  warn "SKIP_SERVICE=1 — not installing the LaunchAgent or starting the server"
+elif [[ -f "$PLIST_PATH" ]] && ! grep -q "$AI_ROOT/omlx/bin/omlxctl" "$PLIST_PATH"; then
+  warn "a LaunchAgent already exists for another install:"
+  warn "  $(grep -o '/[^<]*omlxctl' "$PLIST_PATH" | head -1)"
+  warn "leaving it alone. Re-run with SKIP_SERVICE=1, or remove it first:"
+  warn "  launchctl bootout gui/\$UID/ai.omlx.server; rm '$PLIST_PATH'"
+  SKIP_SERVICE=1
+fi
+
+if [[ "${SKIP_SERVICE:-0}" != "1" ]]; then
 mkdir -p "$HOME/Library/LaunchAgents"
-cat > "$HOME/Library/LaunchAgents/ai.omlx.server.plist" <<PL
+cat > "$PLIST_PATH" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -145,12 +181,16 @@ cat > "$HOME/Library/LaunchAgents/ai.omlx.server.plist" <<PL
 </dict>
 </plist>
 PL
+fi
 
 # ── widget build ─────────────────────────────────────────────────────────────
 say "building the widget"
 OMLX_WIDGET_APP="$AI_ROOT/apps/oMLX Widget.app" "$WSRC/build.sh"
 
 # ── start and open the local admin API for the widget ────────────────────────
+if [[ "${SKIP_SERVICE:-0}" == "1" ]]; then
+  say "skipping server start"
+else
 say "starting oMLX"
 "$AI_ROOT/omlx/bin/omlxctl" start >/dev/null 2>&1 || true
 for i in {1..30}; do
@@ -170,6 +210,7 @@ d.setdefault("idle_timeout", {})["idle_timeout_seconds"] = 900
 json.dump(d, open(p, "w"), indent=2)
 PYS
   "$AI_ROOT/omlx/bin/omlxctl" restart >/dev/null 2>&1 || true
+fi
 fi
 
 print

@@ -2,44 +2,90 @@
 
 A small macOS panel for running and watching [oMLX](https://omlx.ai) — the
 Apple-Silicon LLM inference server. Start and stop the server, watch GPU and
-throughput, manage models, and copy client connection settings, from a window
-that fits in a corner of the screen.
+throughput, manage models, and wire up clients, from a window that fits in a
+corner of the screen.
 
 Built with AppKit + WKWebView. No Xcode, no Electron, no dependencies — one
 `swiftc` call against the Command Line Tools.
 
-## Install
+## Quick start
 
-One command sets up oMLX and the widget under `~/AI`, with models in their own
-directory. No Homebrew, nothing in system Python:
+Paste this into Terminal. It sets up everything and leaves you with a working
+server and app:
 
-```bash
+```sh
 curl -fsSL https://raw.githubusercontent.com/ooberguts/oMLX-widget/main/install.sh | zsh
 ```
 
-It installs `uv` and a private Python 3.12, clones and builds oMLX (with the
-Metal kernels), writes `omlxctl` and a LaunchAgent, builds the widget, and
-starts the server. The memory guard is sized from your installed RAM.
+Then:
+
+```sh
+open ~/AI/apps/"oMLX Widget.app"
+```
+
+That is the whole install. It needs only the Command Line Tools
+(`xcode-select --install`) — no Homebrew, and nothing touches system Python.
+
+Everything lands under `~/AI`, with models in their own directory:
+
+```
+~/AI/
+├── models/                 downloaded weights, nothing else
+├── omlx/                   oMLX source, private venv, settings, omlxctl
+├── cache/kv/               paged SSD KV cache
+├── logs/                   server logs
+└── apps/oMLX Widget.app
+```
+
+The widget has no models to start with — use its **Models** tab to download one.
+
+## Install options
+
+The installer is idempotent — re-run it to update oMLX and rebuild the widget.
 
 | Variable | Effect |
 |---|---|
 | `AI_ROOT=/elsewhere` | install somewhere other than `~/AI` |
 | `OMLX_REF=v0.7.0.dev4` | pin an oMLX version (default: latest tag) |
-| `WITH_KERNELS=0` | skip the Metal kernel build |
+| `WITH_KERNELS=0` | skip the Metal kernel build (faster install, slower inference) |
 | `WIDGET_ONLY=1` | just rebuild the widget |
+| `SKIP_SERVICE=1` | do not install the LaunchAgent or start the server |
+
+What it does: installs `uv` and a private Python 3.12, clones and builds oMLX
+with its Metal kernels, writes `omlxctl` and a LaunchAgent, builds the widget,
+and starts the server. The memory guard is sized from your installed RAM.
+
+It will not overwrite a LaunchAgent belonging to an install under a different
+root — it warns and skips instead.
+
+### Metal kernels need full Xcode
+
+oMLX ships optional Metal kernels (Bonsai ternary decode, Qwen3.5 prefill and
+others) that are opt-in behind `OMLX_WITH_CUSTOM_KERNEL=1`. Building them needs
+the `metal` shader compiler, which comes with **full Xcode** — the Command Line
+Tools do not include it.
+
+The installer checks for it and skips the kernels when it is missing, rather
+than failing. If a kernel build fails for any other reason it retries without
+them, so you always end up with a working install.
+
+Everything works without them; ternary/Bonsai models and Qwen prefill just fall
+back to slower generic paths. To add them later:
+
+```sh
+# after installing Xcode from the App Store
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+WITH_KERNELS=1 curl -fsSL https://raw.githubusercontent.com/ooberguts/oMLX-widget/main/install.sh | zsh
+```
 
 Widget only, from a clone:
 
-```bash
+```sh
 git clone https://github.com/ooberguts/oMLX-widget.git
 cd oMLX-widget && ./build.sh
 ```
 
 Build elsewhere with `OMLX_WIDGET_APP=/Applications/"oMLX Widget.app" ./build.sh`.
-
-The app updates itself: it stamps the commit it was built from into its bundle,
-compares that against `main`, and can download, rebuild and hot-swap in place.
-Click the version chip in the footer to check.
 
 ## Layout it expects
 
