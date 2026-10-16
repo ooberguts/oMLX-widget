@@ -78,15 +78,13 @@ func sendJSON(_ method: String, _ path: String, body: [String: Any]? = nil,
     }.resume()
 }
 
-func postJSON(_ path: String, _ done: @escaping (Any?) -> Void) {
-    guard let url = URL(string: kBase + path) else { return done(nil) }
-    var r = URLRequest(url: url)
-    r.httpMethod = "POST"
-    r.timeoutInterval = 120
-    r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    URLSession.shared.dataTask(with: r) { d, _, _ in
-        done(d.flatMap { try? JSONSerialization.jsonObject(with: $0) })
-    }.resume()
+/// The error oMLX reported, or nil on success. FastAPI errors carry `detail`;
+/// no response at all (timeout, server down) is an error too.
+func errorDetail(_ r: Any?) -> String? {
+    guard let d = r as? [String: Any] else { return r == nil ? "no response from server" : nil }
+    if let s = d["detail"] as? String { return s }
+    if let e = d["error"] as? [String: Any] { return (e["message"] as? String) ?? "\(e)" }
+    return nil
 }
 
 // ── Updater ──────────────────────────────────────────────────────────────────
@@ -570,12 +568,19 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                 let out = shell([kCtl, action])
                 DispatchQueue.main.async { self.toast(out.trimmingCharacters(in: .whitespacesAndNewlines)) }
             }
-        case "load":
-            toast("loading \(arg)…")
-            postJSON("/v1/models/\(arg)/load") { _ in DispatchQueue.main.async { self.tick() } }
-        case "unload":
-            toast("unloading \(arg)…")
-            postJSON("/v1/models/\(arg)/unload") { _ in DispatchQueue.main.async { self.tick() } }
+        case "load", "unload":
+            // The page sends the base model id; profile ids are not loadable.
+            toast("\(action)ing \(arg)…")
+            sendJSON("POST", "/v1/models/\(enc(arg))/\(action)", timeout: 600) { r in
+                DispatchQueue.main.async {
+                    if let err = errorDetail(r) {
+                        self.toast("\(action) failed: \(err)")
+                    } else {
+                        self.toast(action == "load" ? "loaded \(arg)" : "unloaded \(arg)")
+                    }
+                    self.tick()
+                }
+            }
         case "copy":
             let pb = NSPasteboard.general
             pb.clearContents()
@@ -636,9 +641,15 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                 }
                 group.notify(queue: .main) {
                     sendJSON("PUT", "/admin/api/models/\(self.enc(target))/settings",
-                             body: ["model_alias": kAlias]) { _ in
+                             body: ["model_alias": kAlias]) { r in
+                        let err = errorDetail(r)
+                        // Don't leave the alias pointing nowhere: give it back.
+                        if err != nil, let prev = holders.first {
+                            sendJSON("PUT", "/admin/api/models/\(self.enc(prev))/settings",
+                                     body: ["model_alias": kAlias]) { _ in }
+                        }
                         DispatchQueue.main.async {
-                            self.toast("'\(kAlias)' → \(target)")
+                            self.toast(err.map { "serve failed: \($0)" } ?? "'\(kAlias)' → \(target)")
                             self.tick()
                         }
                     }

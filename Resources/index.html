@@ -542,11 +542,14 @@ window.render = s => {
     if (size) bits.push(gb(size));
     if (m.model_type) bits.push(m.model_type);
     if (m.max_context_window) bits.push((m.max_context_window/1024|0) + 'K ctx');
+    // A profile row (base:profile) shares its base model's engine; only the
+    // base id is loadable.
+    const base = esc(m.source_model_id || m.id);
     const btn = m.is_loading
       ? '<button class="mini" disabled>…</button>'
       : m.loaded
-        ? `<button class="mini" onclick="send('unload','${esc(m.id)}')">Unload</button>`
-        : `<button class="mini" onclick="send('load','${esc(m.id)}')">Load</button>`;
+        ? `<button class="mini" onclick="send('unload','${base}')">Unload</button>`
+        : `<button class="mini" onclick="send('load','${base}')">Load</button>`;
     return `<div class="row ${m.loaded ? 'lit' : ''}">
       <div class="sdot ${cls}"></div>
       <div class="rmeta">
@@ -618,16 +621,23 @@ function renderModels(ms, tasks) {
   $('localModels').innerHTML = ms.map(m => {
     const size = m.estimated_size || m.actual_size || 0;
     const armed = confirming === m.id;
-    const serving = m.model_alias === ALIAS;
+    // The alias lives on the base model. A profile of the serving base
+    // answers as `${ALIAS}:<profile>`, which oMLX already reports as its id.
+    const prof = !!m.source_model_id;
+    const baseId = m.source_model_id || m.id;
+    const serving = prof
+      ? (ms.find(b => b.id === baseId) || {}).model_alias === ALIAS
+      : m.model_alias === ALIAS;
+    const pill = prof ? m.id : ALIAS;
     return `<div class="row ${m.loaded ? 'lit' : ''}">
       <div class="sdot ${m.loaded ? 'on' : ''}"></div>
       <div class="rmeta">
         <div class="rname">${esc(m.id)}</div>
-        <div class="rsub">${size ? gb(size) : '—'}${m.loaded ? ' · loaded' : ''}</div>
+        <div class="rsub">${prof ? 'profile of ' + esc(baseId) : (size ? gb(size) : '—')}${m.loaded ? ' · loaded' : ''}</div>
       </div>
-      ${serving ? `<div class="pill">${esc(ALIAS)}</div>`
-                : `<button class="mini" data-serve="${esc(m.id)}">Serve</button>`}
-      <button class="mini ${armed ? 'danger' : ''}" data-del="${esc(m.id)}">${armed ? 'Sure?' : 'Delete'}</button>
+      ${serving ? `<div class="pill">${esc(pill)}</div>`
+                : `<button class="mini" data-serve="${esc(baseId)}">Serve</button>`}
+      ${prof ? '' : `<button class="mini ${armed ? 'danger' : ''}" data-del="${esc(m.id)}">${armed ? 'Sure?' : 'Delete'}</button>`}
     </div>`;
   }).join('');
   $('localModels').querySelectorAll('[data-serve]').forEach(b =>
