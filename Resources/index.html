@@ -139,6 +139,10 @@
     background:#0c0e14;border:1px solid var(--line);border-radius:7px;padding:5px 8px;
     outline:none;user-select:text;-webkit-user-select:text}
   input[type=text]:focus{border-color:#3d465c}
+  select{flex:1;min-width:0;font:inherit;font-size:11px;color:var(--tx);background:#0c0e14;
+    border:1px solid var(--line);border-radius:7px;padding:4px 6px;outline:none}
+  select:focus{border-color:#3d465c}
+  select:disabled{color:var(--faint)}
   input[type=text]::placeholder{color:var(--faint)}
   button.danger{background:rgba(255,95,109,.12);border-color:rgba(255,95,109,.3);color:var(--crit)}
   button.danger:hover{background:rgba(255,95,109,.2)}
@@ -268,6 +272,13 @@
     <div class="sec" id="dlsec" style="display:none">
       <div class="sechd"><div class="lbl">Downloading</div></div>
       <div id="dls"></div>
+    </div>
+
+    <div class="card">
+      <div class="lbl" style="margin-bottom:2px">Serving as <span id="sAlias">local</span></div>
+      <div class="kv"><div class="kvk">Model</div><select id="sModel"></select></div>
+      <div class="kv"><div class="kvk">Profile</div><select id="sProf"></select></div>
+      <div class="hint">Apps ask for <b id="sAlias2">local</b>; these two pick what answers.</div>
     </div>
 
     <div class="sec">
@@ -528,7 +539,8 @@ window.render = s => {
 
   const per = s.per || {};
   renderGraphs(s);
-  renderModels(ms, s.tasks || []);
+  renderModels(ms, s.tasks || [], s.profiles || {});
+  renderServing(ms, s.profiles || {});
   renderConnect(ms);
 
   // ── models ──
@@ -591,7 +603,52 @@ function statStrip(id, p) {
   return `<div class="mstat">${bits.join('')}</div>`;
 }
 
-function renderModels(ms, tasks) {
+// The profile oMLX has applied to a model, or '' for its own settings.
+const DEFAULTS = 'model-defaults';   // where the widget keeps a model's own settings
+const activeProfile = (profiles, id) => {
+  const a = (profiles[id] || {}).active;
+  return a && a !== DEFAULTS ? a : '';
+};
+const profileLabel = (profiles, id) => {
+  const a = activeProfile(profiles, id);
+  const p = ((profiles[id] || {}).list || []).find(x => x.name === a);
+  return a ? (p ? p.label : a) : '';
+};
+
+// Fill a <select> without disturbing it while the user has it open.
+function fillSelect(el, opts, value, disabled) {
+  if (document.activeElement === el) return;
+  const sig = JSON.stringify(opts);
+  if (el.dataset.sig !== sig) {
+    el.innerHTML = opts.map(o => `<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
+    el.dataset.sig = sig;
+  }
+  el.value = value;
+  el.disabled = !!disabled;
+}
+
+let servProfiles = {};
+function renderServing(ms, profiles) {
+  servProfiles = profiles;
+  $('sAlias').textContent = $('sAlias2').textContent = ALIAS;
+  const holder = (ms.find(m => m.model_alias === ALIAS) || {}).id || '';
+  fillSelect($('sModel'),
+    (holder ? [] : [['', '— nothing —']]).concat(ms.map(m => [m.id, m.id + (m.loaded ? '  ●' : '')])),
+    holder, !ms.length);
+  const list = ((profiles[holder] || {}).list || []).filter(p => p.name !== DEFAULTS);
+  fillSelect($('sProf'),
+    [['', 'Model defaults']].concat(list.map(p => [p.name, p.label])),
+    activeProfile(profiles, holder), !holder || !list.length);
+  $('sProf').dataset.model = holder;
+}
+$('sModel').onchange = e => { if (e.target.value) send('serve', e.target.value); e.target.blur(); };
+$('sProf').onchange = e => {
+  window.webkit.messageHandlers.bridge.postMessage(
+    {action: 'useProfile', model: e.target.dataset.model, profile: e.target.value});
+  e.target.blur();
+};
+
+function renderModels(ms, tasks, profiles = servProfiles) {
   // active downloads
   const live = tasks.filter(t => ['downloading','pending','retrying'].includes(t.status));
   $('dlsec').style.display = live.length ? 'flex' : 'none';
@@ -628,7 +685,7 @@ function renderModels(ms, tasks) {
         <div class="rname">${esc(m.id)}</div>
         <div class="rsub">${size ? gb(size) : '—'}${m.loaded ? ' · loaded' : ''}</div>
       </div>
-      ${serving ? `<div class="pill">${esc(ALIAS)}</div>`
+      ${serving ? `<div class="pill">${esc([ALIAS, profileLabel(profiles, m.id)].filter(Boolean).join(' · '))}</div>`
                 : `<button class="mini" data-serve="${esc(m.id)}">Serve</button>`}
       <button class="mini ${armed ? 'danger' : ''}" data-del="${esc(m.id)}">${armed ? 'Sure?' : 'Delete'}</button>
     </div>`;

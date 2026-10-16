@@ -12,6 +12,16 @@ let kRepo    = "ooberguts/oMLX-widget"
 let kPoll    = 1.5
 /// Stable name clients ask for; whichever model holds this alias answers.
 let kAlias   = "local"
+/// Profile the widget keeps a model's own settings in, so "Model defaults"
+/// can be re-applied after switching to another profile.
+let kDefaultsProfile = "model-defaults"
+/// Settings oMLX keeps out of profiles (EXCLUDED_FROM_PROFILES).
+let kNotInProfile: Set<String> = [
+    "is_pinned", "is_default", "is_hidden", "is_favorite", "display_name", "description",
+    "model_alias", "model_type_override", "active_profile_name", "ttl_seconds",
+    "qwen4_ple_ssd_offload", "deepseek_v41_engram_ssd_offload",
+    "deepseek_v41_ced_prefill_enabled", "trust_remote_code",
+]
 
 // ── Shell helper ─────────────────────────────────────────────────────────────
 @discardableResult
@@ -308,6 +318,7 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
     let store = StatStore()
     var lifetime: [String: [String: Any]] = [:]   // model -> alltime stats
     var loadBase: [String: Int] = [:]             // model -> completion tokens when it loaded
+    var profiles: [String: Any] = [:]             // model -> {active, list:[{name,label}]}
     var tickN = 0
     var flushN = 0
 
@@ -445,6 +456,7 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                 per[id] = row
             }
             snap["per"] = per
+            snap["profiles"] = self.profiles
 
             self.flushN += 1
             if self.flushN % 10 == 0 { self.store.flush() }
@@ -466,6 +478,7 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
             if self.tickN % 4 == 1,
                let ms = (models as? [String: Any])?["models"] as? [[String: Any]] {
                 self.refreshLifetime(ms.compactMap { $0["id"] as? String })
+                self.refreshProfiles()
             }
         }
     }
@@ -483,6 +496,68 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                         "requests":   (d["total_requests"] as? Int) ?? 0,
                         "avg":        (d["avg_generation_tps"] as? Double) ?? 0,
                     ]
+                }
+            }
+        }
+    }
+
+    /// Each model's saved profiles and which one is applied. The applied
+    /// profile is what plain requests (and so the alias) get.
+    func refreshProfiles(_ done: (() -> Void)? = nil) {
+        getJSON("/admin/api/models") { [weak self] r in
+            guard let self = self,
+                  let ms = (r as? [String: Any])?["models"] as? [[String: Any]] else { return }
+            let group = DispatchGroup()
+            var out: [String: Any] = [:]
+            let lock = NSLock()
+            for m in ms {
+                guard let id = m["id"] as? String else { continue }
+                let active = (m["settings"] as? [String: Any])?["active_profile_name"] as? String
+                group.enter()
+                getJSON("/admin/api/models/\(self.enc(id))/profiles") { p in
+                    let list = ((p as? [String: Any])?["profiles"] as? [[String: Any]] ?? []).map {
+                        ["name": $0["name"] ?? "", "label": $0["display_name"] ?? $0["name"] ?? ""]
+                    }
+                    lock.lock()
+                    out[id] = ["active": active ?? "", "list": list]
+                    lock.unlock()
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) { self.profiles = out; done?() }
+        }
+    }
+
+    /// Apply a profile to a model. "" means the model's own settings, which
+    /// are kept as a hidden `model-defaults` profile so they can come back.
+    func useProfile(_ model: String, _ name: String) {
+        let path = "/admin/api/models/\(enc(model))"
+        toast("switching \(model) to \(name.isEmpty ? "model defaults" : name)…")
+        getJSON("/admin/api/models") { r in
+            let ms = (r as? [String: Any])?["models"] as? [[String: Any]] ?? []
+            let settings = ms.first { ($0["id"] as? String) == model }?["settings"] as? [String: Any] ?? [:]
+            let finish: () -> Void = {
+                let target = name.isEmpty ? kDefaultsProfile : self.enc(name)
+                sendJSON("POST", "\(path)/profiles/\(target)/apply") { a in
+                    DispatchQueue.main.async {
+                        if let err = errorDetail(a) { self.toast("switch failed: \(err)") }
+                        else { self.toast("\(model): \(name.isEmpty ? "model defaults" : name)") }
+                        self.refreshProfiles { self.tick() }
+                    }
+                }
+            }
+            // No profile applied: the live settings are the model's own, so
+            // snapshot them before a profile overwrites them.
+            guard settings["active_profile_name"] as? String == nil else { return finish() }
+            let own = settings.filter { !kNotInProfile.contains($0.key) && !($0.value is NSNull) }
+            sendJSON("PUT", "\(path)/profiles/\(kDefaultsProfile)", body: ["settings": own]) { u in
+                if errorDetail(u) == nil { return finish() }
+                sendJSON("POST", "\(path)/profiles", body: [
+                    "name": kDefaultsProfile, "display_name": "Model defaults", "settings": own,
+                ]) { c in
+                    if let err = errorDetail(c) {
+                        DispatchQueue.main.async { self.toast("could not save model defaults: \(err)") }
+                    } else { finish() }
                 }
             }
         }
@@ -655,6 +730,9 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                     }
                 }
             }
+        case "useProfile":
+            guard let model = body["model"] as? String else { return }
+            useProfile(model, (body["profile"] as? String) ?? "")
         case "resetStats":
             store.reset(arg)
             toast("reset tps extremes for \(arg)")
