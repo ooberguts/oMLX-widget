@@ -283,7 +283,9 @@
 
     <div class="sec">
       <div class="sechd"><div class="lbl">On disk</div><div class="sp"></div>
-        <div class="lbl" id="diskTotal"></div></div>
+        <div class="lbl" id="diskTotal"></div>
+        <button class="mini cp" id="expIds" title="repo ids, space-separated — paste into Get on another Mac">Copy ids</button>
+        <button class="mini cp" id="expLinks" title="one Hugging Face link per line">Copy links</button></div>
       <div id="localModels"><div class="empty">no models</div></div>
     </div>
 
@@ -295,7 +297,7 @@
         <button class="mini" id="btnGet">Get</button>
         <button class="mini" id="btnFind">Find</button>
       </div>
-      <div class="hint"><b>Get</b> downloads an exact repo id.
+      <div class="hint"><b>Get</b> downloads exact repo ids — one, or several separated by spaces.
         <b>Find</b> searches Hugging Face for MLX models.</div>
       <div class="res" id="searchRes" style="margin-top:7px"></div>
     </div>
@@ -648,6 +650,35 @@ $('sProf').onchange = e => {
   e.target.blur();
 };
 
+// ── export: which Hugging Face repo each downloaded model came from ──
+// oMLX stores org/repo as models/<org>/<name>. A model in a flat folder has no
+// org, so its source is unknowable from disk — return null rather than guess.
+const REPO_RE = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/;
+function repoOf(m) {
+  if (m.source_repo_id && REPO_RE.test(m.source_repo_id)) return m.source_repo_id;
+  const parts = String(m.model_path || '').split('/').filter(Boolean);
+  if (parts.length < 2) return null;
+  const org = parts[parts.length - 2], name = parts[parts.length - 1];
+  if (org === 'models' || name !== m.id) return null;
+  const id = org + '/' + name;
+  return REPO_RE.test(id) ? id : null;
+}
+
+let exportList = [];   // [{id, repo}] for the models currently on disk
+
+function copyExport(kind) {
+  const have = exportList.filter(e => e.repo);
+  const skipped = exportList.length - have.length;
+  if (!have.length) return toast('no known source repos to copy');
+  const text = kind === 'links'
+    ? have.map(e => 'https://huggingface.co/' + e.repo).join('\n')
+    : have.map(e => e.repo).join(' ');
+  copy(text);
+  if (skipped) setTimeout(() => toast(`${skipped} model${skipped > 1 ? 's' : ''} skipped — source unknown`), 1400);
+}
+$('expIds').onclick   = () => copyExport('ids');
+$('expLinks').onclick = () => copyExport('links');
+
 function renderModels(ms, tasks, profiles = servProfiles) {
   // active downloads
   const live = tasks.filter(t => ['downloading','pending','retrying'].includes(t.status));
@@ -668,6 +699,7 @@ function renderModels(ms, tasks, profiles = servProfiles) {
     b.onclick = () => send('cancel', b.dataset.cancel));
 
   // on-disk models
+  exportList = ms.map(m => ({id: m.id, repo: repoOf(m)}));
   if (!ms.length) {
     $('localModels').innerHTML = '<div class="empty">no models in ~/AI/models</div>';
     $('diskTotal').textContent = '';
@@ -683,7 +715,7 @@ function renderModels(ms, tasks, profiles = servProfiles) {
       <div class="sdot ${m.loaded ? 'on' : ''}"></div>
       <div class="rmeta">
         <div class="rname">${esc(m.id)}</div>
-        <div class="rsub">${size ? gb(size) : '—'}${m.loaded ? ' · loaded' : ''}</div>
+        <div class="rsub">${esc(repoOf(m) ? repoOf(m).split('/')[0] : 'source unknown')} · ${size ? gb(size) : '—'}${m.loaded ? ' · loaded' : ''}</div>
       </div>
       ${serving ? `<div class="pill">${esc([ALIAS, profileLabel(profiles, m.id)].filter(Boolean).join(' · '))}</div>`
                 : `<button class="mini" data-serve="${esc(m.id)}">Serve</button>`}
@@ -888,7 +920,11 @@ window.onHermesTest = r => {
 
 $('upd').onclick = () => upd ? send('applyUpdate', upd.sha) : send('checkUpdate');
 
-$('btnGet').onclick  = () => { send('download', $('repoIn').value); $('repoIn').value = ''; };
+$('btnGet').onclick  = () => {
+  const ids = $('repoIn').value.split(/[\s,]+/).filter(Boolean);
+  ids.forEach(id => send('download', id));
+  $('repoIn').value = '';
+};
 $('btnFind').onclick = () => send('search', $('repoIn').value);
 $('repoIn').onkeydown = e => {
   if (e.key !== 'Enter') return;

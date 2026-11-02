@@ -117,6 +117,13 @@ though it reads like a candidate.
 exact repo id or Hugging Face search. **Serve** moves the `local` alias onto a
 model so clients can switch models without touching their own config.
 
+Each model row shows the org it came from, and **Copy ids** / **Copy links** in
+the header copy the Hugging Face repo ids (space-separated) or links (one per
+line) for everything on disk — for setting up another Mac. **Get** accepts
+several space-separated ids, so a copied list pastes straight into it. Repo ids
+come from the `models/<org>/<name>` folder layout; a model in a flat folder has
+no org on disk, so it is marked *source unknown* and left out of the copy.
+
 **Connect** — base URLs, API key and model ids with copy buttons, plus a
 **Hermes Agent** panel behind a toggle.
 
