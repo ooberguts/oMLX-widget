@@ -591,18 +591,27 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
             toast("hermes helper missing from bundle"); return done(nil)
         }
         DispatchQueue.global().async {
-            // System python3 carries PyYAML on macOS; fall back to the oMLX venv.
-            var exe = "/usr/bin/python3"
-            if !FileManager.default.isExecutableFile(atPath: exe) {
-                exe = "\(kRoot)/omlx/.venv/bin/python"
+            // An executable Python is not necessarily one that has PyYAML.
+            let candidates = ["\(kRoot)/omlx/.venv/bin/python", "/usr/bin/python3"]
+            guard let exe = candidates.first(where: { path in
+                FileManager.default.isExecutableFile(atPath: path) &&
+                Updater.run(path, ["-c", "import yaml"] ).0 == 0
+            }) else {
+                DispatchQueue.main.async {
+                    done(["error": "No Python with PyYAML found. Install PyYAML in the oMLX virtual environment."])
+                }
+                return
             }
             let (code, out) = Updater.run(exe, [script.path] + args)
             let j = out.data(using: .utf8).flatMap {
                 try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
             }
             DispatchQueue.main.async {
-                if code != 0 && j == nil { self.toast("helper failed: \(out.prefix(120))") }
-                done(j)
+                if code != 0 {
+                    done(["error": (j?["error"] as? String) ?? "helper failed: \(out.prefix(120))"])
+                } else {
+                    done(j ?? ["error": "Hermes helper returned invalid JSON"])
+                }
             }
         }
     }

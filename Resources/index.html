@@ -845,6 +845,13 @@ try { if (localStorage.getItem('hermesOn') === '1') $('hTog').click(); } catch (
 $('hRefresh').onclick = () => send('hermesList');
 
 window.onHermes = d => {
+  if (d && d.error) {
+    hProfiles = [];
+    hSel = null;
+    $('hProfiles').innerHTML = `<div class="empty">${esc(d.error)}</div>`;
+    refreshTarget();
+    return;
+  }
   hProfiles = (d && d.profiles) || [];
   if (!hProfiles.length) {
     $('hProfiles').innerHTML = '<div class="empty">no Hermes profiles found</div>';
