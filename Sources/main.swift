@@ -65,10 +65,10 @@ func gpuUtilization() -> Double? {
 }
 
 // ── Networking ───────────────────────────────────────────────────────────────
-func getJSON(_ path: String, _ done: @escaping (Any?) -> Void) {
+func getJSON(_ path: String, timeout: TimeInterval = 3, _ done: @escaping (Any?) -> Void) {
     guard let url = URL(string: kBase + path) else { return done(nil) }
     var r = URLRequest(url: url)
-    r.timeoutInterval = 3
+    r.timeoutInterval = timeout
     URLSession.shared.dataTask(with: r) { d, _, _ in
         guard let d = d, let j = try? JSONSerialization.jsonObject(with: d) else { return done(nil) }
         done(j)
@@ -95,6 +95,107 @@ func errorDetail(_ r: Any?) -> String? {
     if let s = d["detail"] as? String { return s }
     if let e = d["error"] as? [String: Any] { return (e["message"] as? String) ?? "\(e)" }
     return nil
+}
+
+// ── Limits ───────────────────────────────────────────────────────────────────
+/// The parts of a model's config.json that decide how much cache it needs. The
+/// full file can be large (per-layer quantisation tables), so only these cross.
+private let kGeometryKeys: Set<String> = [
+    "model_type", "num_hidden_layers", "num_attention_heads", "num_key_value_heads",
+    "head_dim", "hidden_size", "layer_types", "full_attention_interval",
+    "max_position_embeddings", "sliding_window", "linear_num_key_heads",
+    "linear_key_head_dim", "linear_value_head_dim", "linear_num_value_heads",
+    "linear_conv_kernel_dim", "global_head_dim", "num_global_key_value_heads",
+    "attention_k_eq_v", "num_kv_shared_layers",
+]
+
+func modelGeometry(at path: String) -> [String: Any]? {
+    guard let data = FileManager.default.contents(atPath: path + "/config.json"),
+          let cfg = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    let text = (cfg["text_config"] as? [String: Any]) ?? cfg
+    var out: [String: Any] = [:]
+    for (k, v) in text where kGeometryKeys.contains(k) { out[k] = v }
+    if out["model_type"] == nil, let mt = cfg["model_type"] { out["model_type"] = mt }
+    return ["model_type": cfg["model_type"] ?? out["model_type"] ?? "", "text_config": out]
+}
+
+/// Everything the Limits tab needs in one object. Deliberately forwards only
+/// named sections: the settings payload also carries auth material.
+func gatherLimits(_ done: @escaping ([String: Any]) -> Void) {
+    let g = DispatchGroup()
+    var gs: [String: Any]?, act: [String: Any]?, mods: [String: Any]?
+    var stats: [String: Any]?, pool: [String: Any]?
+    g.enter(); getJSON("/admin/api/global-settings", timeout: 8) { gs = $0 as? [String: Any]; g.leave() }
+    g.enter(); getJSON("/admin/api/activity",        timeout: 8) { act = $0 as? [String: Any]; g.leave() }
+    g.enter(); getJSON("/admin/api/models",          timeout: 8) { mods = $0 as? [String: Any]; g.leave() }
+    g.enter(); getJSON("/admin/api/stats",           timeout: 8) { stats = $0 as? [String: Any]; g.leave() }
+    g.enter(); getJSON("/v1/models/status",          timeout: 8) { pool = $0 as? [String: Any]; g.leave() }
+
+    g.notify(queue: .global()) {
+        guard let gs = gs, let mods = mods else {
+            return done(["error": "oMLX is not answering — start the server to see its limits"])
+        }
+        var out: [String: Any] = ["t": Date().timeIntervalSince1970]
+        out["system"] = gs["system"] ?? NSNull()
+        out["memory"] = gs["memory"] ?? NSNull()
+        out["cache"] = gs["cache"] ?? NSNull()
+        out["scheduler"] = gs["scheduler"] ?? NSNull()
+        out["pressure"] = (act?["active_models"] as? [String: Any])?["memory_pressure"] ?? NSNull()
+        let rc = (stats?["runtime_cache"] as? [String: Any]) ?? [:]
+        out["runtime_cache"] = ["hot_cache_size_bytes": rc["hot_cache_size_bytes"] ?? 0,
+                                "hot_cache_max_bytes": rc["hot_cache_max_bytes"] ?? 0,
+                                "hot_cache_entries": rc["hot_cache_entries"] ?? 0]
+        out["pool"] = [
+            "final_ceiling": pool?["final_ceiling"] ?? NSNull(),
+            "current_model_memory": pool?["current_model_memory"] ?? NSNull(),
+        ]
+
+        let wantedSettings = ["max_context_window", "max_tokens", "turboquant_kv_enabled",
+                              "turboquant_kv_bits", "turboquant_skip_last", "mtp_enabled", "model_alias"]
+        var models: [[String: Any]] = []
+        for m in (mods["models"] as? [[String: Any]]) ?? [] {
+            guard m["source_model_id"] == nil, let id = m["id"] as? String else { continue }
+            let st = (m["settings"] as? [String: Any]) ?? [:]
+            var row: [String: Any] = [
+                "id": id,
+                "loaded": (m["loaded"] as? Bool) ?? false,
+                "pinned": (m["pinned"] as? Bool) ?? false,
+                "model_path": m["model_path"] ?? NSNull(),
+                "native_context": m["model_context_length"] ?? NSNull(),
+                "estimated_size": m["estimated_size"] ?? NSNull(),
+                "actual_size": m["actual_size"] ?? NSNull(),
+                "settings": Dictionary(uniqueKeysWithValues: wantedSettings.map { ($0, st[$0] ?? NSNull()) }),
+            ]
+            if let path = m["model_path"] as? String, let geo = modelGeometry(at: path) {
+                row["config"] = geo
+            }
+            models.append(row)
+        }
+        out["models"] = models
+        done(out)
+    }
+}
+
+/// Run a request against oMLX for the page. Only the admin and model-control
+/// APIs are reachable, so the page cannot be used to hit anything else.
+func proxyRequest(_ method: String, _ path: String, _ body: Any?,
+                  _ done: @escaping (Int, Any?) -> Void) {
+    let okMethod = ["GET", "POST", "PUT", "DELETE"].contains(method)
+    let okPath = (path.hasPrefix("/admin/api/") || path.hasPrefix("/v1/models/"))
+        && !path.contains("..") && !path.contains("://") && !path.contains("\n")
+    guard okMethod, okPath, let url = URL(string: kBase + path) else {
+        return done(0, ["detail": "request not allowed: \(method) \(path)"])
+    }
+    var r = URLRequest(url: url)
+    r.httpMethod = method
+    r.timeoutInterval = 300
+    r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if let b = body, !(b is NSNull) { r.httpBody = try? JSONSerialization.data(withJSONObject: b) }
+    URLSession.shared.dataTask(with: r) { d, resp, err in
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if let err = err { return done(code, ["detail": err.localizedDescription]) }
+        done(code, d.flatMap { try? JSONSerialization.jsonObject(with: $0) })
+    }.resume()
 }
 
 // ── Updater ──────────────────────────────────────────────────────────────────
@@ -856,6 +957,18 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
                 self.tick()
             }
 
+        case "limitsGet":
+            gatherLimits { payload in
+                DispatchQueue.main.async { self.call("window.onLimits", payload) }
+            }
+        case "api":
+            let token = (body["token"] as? String) ?? ""
+            proxyRequest((body["method"] as? String) ?? "GET",
+                         (body["path"] as? String) ?? "", body["body"]) { status, json in
+                DispatchQueue.main.async {
+                    self.call("window.onApi", ["token": token, "status": status, "json": json ?? NSNull()])
+                }
+            }
         case "admin":
             NSWorkspace.shared.open(URL(string: kBase + "/admin")!)
         case "pin":
@@ -869,6 +982,19 @@ final class Controller: NSObject, NSApplicationDelegate, WKScriptMessageHandler,
 
     func applicationShouldTerminateAfterLastWindowClosed(_ a: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ n: Notification) { store.flush() }
+}
+
+// `OMLXWidget --dump-limits` prints what the Limits tab would receive and exits,
+// so the data path can be checked against a live server without opening a window.
+if CommandLine.arguments.contains("--dump-limits") {
+    gatherLimits { payload in
+        if let d = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) {
+            FileHandle.standardOutput.write(d)
+            FileHandle.standardOutput.write(Data("\n".utf8))
+        }
+        exit(0)
+    }
+    RunLoop.main.run()
 }
 
 let app = NSApplication.shared

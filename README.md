@@ -124,6 +124,53 @@ several space-separated ids, so a copied list pastes straight into it. Repo ids
 come from the `models/<org>/<name>` folder layout; a model in a flat folder has
 no org on disk, so it is marked *source unknown* and left out of the copy.
 
+**Limits** — what your machine can do, and what to change when you hit a limit.
+
+The **Memory** card shows what oMLX is using against its soft and hard limits, how
+much your other apps have free, and which of oMLX's three ceilings is actually
+binding for you. oMLX's ceiling is the lowest of a static limit, a dynamic one (or
+your custom pin), and Apple's GPU memory cap, and each answers to a different
+knob, so naming the right one matters. Changing the mode or custom ceiling takes
+effect immediately. Setting a limit at or near what is currently in use asks you
+to confirm, because oMLX would start pausing requests or evicting models.
+
+The **Context window** card forecasts RAM for a model at a chosen context length
+and KV-cache precision: weights, runtime and hot cache, fixed recurrent state,
+and KV cache, against the soft and hard limits, plus how far you can go before
+each. Suggestions appear only when the choice is tight or won't fit, each with
+what it would buy, and each one *stages* a change into the controls rather than
+applying it:
+
+- lower the context to the largest size that fits,
+- quantise the KV cache to 4-bit,
+- raise the ceiling (only offered if it really lets more fit, and warns when your
+  other apps would be squeezed),
+- unload another loaded model (and says so when the model fits on its own),
+- raise Apple's GPU memory cap, which needs `sudo`, so the app only shows the
+  command and never runs it.
+
+The context limit applies live. TurboQuant settings are fixed when a model loads,
+so changing them unloads and reloads that model; the app says so first and loads
+it again afterwards if oMLX doesn't.
+
+How much the forecast can be trusted depends on the architecture. For the
+`qwen3_5` family it was checked against the KV blocks oMLX writes to disk, which
+record their model and token count: plain fp16 KV matched to 4 bytes per token,
+TurboQuant 4-bit to within 0.1%, and the fixed recurrent state to within 0.02%.
+Other architectures are labelled **upper bound** or **estimate** rather than
+measured. Gemma 4, for instance, assumes K and V are stored separately, so the
+real figure is probably lower. TurboQuant sizes are measured at 4-bit; other
+widths extrapolate from that. Runtime overhead is measured from the running
+server, so it already includes your current session's cache, which errs safe.
+
+Two things are shown but not editable. Hot-cache and SSD-cache sizes are not
+applied live by oMLX. Requests-at-once stays at 1 on purpose: oMLX issue #3767
+(MTP with TurboQuant KV crashes the engine when two requests decode together) was
+still open when this was written.
+
+A context limit set here is published by oMLX as `max_model_len` in `/v1/models`,
+so OpenAI-style clients can see it.
+
 **Connect** — base URLs, API key and model ids with copy buttons, plus a
 **Hermes Agent** panel behind a toggle.
 
@@ -159,6 +206,25 @@ decode rate itself and keeps peak/low in `~/AI/omlx/data/widget-tps.json`.
 The admin API is read through `skip_api_key_verification`, which is safe only
 because oMLX binds to loopback. If you bind to `0.0.0.0`, set an API key and
 turn that off.
+
+## Development
+
+The forecasting maths is a pure module, `Resources/limits.js`, with tests that use
+KV block sizes measured from a real oMLX cache as the oracle:
+
+```sh
+node --test tests/
+```
+
+`tests/fixtures.json` holds the architecture fields of the models those numbers
+came from.
+
+`OMLXWidget --dump-limits` prints what the Limits tab would receive from a running
+server and exits, so the data path can be checked without opening a window:
+
+```sh
+"$HOME/AI/apps/oMLX Widget.app/Contents/MacOS/OMLXWidget" --dump-limits
+```
 
 ## Licence
 

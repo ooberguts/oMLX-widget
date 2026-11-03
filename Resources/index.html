@@ -160,6 +160,23 @@
   .tog.on .sw::after{left:15px;background:var(--ok)}
   .ok{color:var(--ok)} .bad{color:var(--crit)} .warn{color:var(--warn)}
 
+  /* limits */
+  .stackw{position:relative}
+  .stack{display:flex;height:9px;border-radius:5px;overflow:hidden;background:#0c0e14}
+  .stack i{display:block;height:100%;transition:width .35s}
+  .tk{position:absolute;top:-2px;bottom:-2px;width:2px;border-radius:2px;opacity:.9}
+  .tk.soft{background:var(--warn)} .tk.hard{background:var(--crit)}
+  .legend{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .legend b{margin-right:3px}
+  .lrow{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2.5px 0;color:var(--dim)}
+  .lrow b{color:var(--tx);font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+  .lrow.tot{border-top:1px solid #ffffff12;margin-top:3px;padding-top:5px}
+  .verdict{font-size:11.5px;font-weight:650;margin-top:7px}
+  .adv{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:8px 9px;margin-bottom:6px}
+  .adv .at{font-size:11.5px;font-weight:650}
+  .adv .ad{font-size:10.5px;color:var(--dim);margin:2px 0 6px;line-height:1.45}
+  .adv pre{margin:0 0 6px}
+
   /* connect */
   .kv{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid #ffffff0a}
   .kv:last-child{border-bottom:0}
@@ -208,6 +225,7 @@
   <div class="tabs">
     <div class="tab sel" id="tMon">Monitor</div>
     <div class="tab" id="tMod">Models</div>
+    <div class="tab" id="tLim">Limits</div>
     <div class="tab" id="tConn">Connect</div>
   </div>
 
@@ -303,6 +321,68 @@
     </div>
   </div><!-- /paneMod -->
 
+  <div id="paneLim" style="display:none;flex-direction:column;gap:9px">
+    <div id="limMsg" class="empty" style="display:none"></div>
+
+    <div class="card" id="limMem">
+      <div class="sechd" style="padding:0 0 6px"><div class="lbl">Memory</div><div class="sp"></div>
+        <div class="chip ok" id="limLevel">ok</div></div>
+      <div class="memtop"><div class="memnum" id="limUse">—</div><div class="memof" id="limOf"></div></div>
+      <div class="stackw"><div class="stack"><i id="limFill" style="background:linear-gradient(90deg,#3ddc91,#35c4d8)"></i></div>
+        <div class="tk soft" id="limTkSoft"></div><div class="tk hard" id="limTkHard"></div></div>
+      <div class="legend" style="margin-top:5px"><span><b class="warn">▎</b>soft <span id="limSoftV"></span></span>
+        <span><b class="bad">▎</b>hard <span id="limHardV"></span></span><span id="limMax"></span></div>
+      <div class="lrow" style="margin-top:6px"><span>Your Mac</span><b id="limTotal"></b></div>
+      <div class="lrow"><span>Free for other apps right now</span><b id="limAvail"></b></div>
+      <div class="hint" id="limBind"></div>
+      <div class="hint" id="limLevelHelp"></div>
+
+      <div class="kv" style="margin-top:6px"><div class="kvk">Mode</div><select id="limTier"></select></div>
+      <div class="kv" id="limCeilRow"><div class="kvk">Ceiling</div>
+        <input type="text" id="limCeil" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="GB">
+        <span class="gsub">GB</span></div>
+      <div class="field" style="margin-top:6px"><button class="mini go" id="limGuardApply" style="flex:1">Apply memory limit</button></div>
+      <div class="hint" id="limGuardHint"></div>
+    </div>
+
+    <div class="card" id="limCtx">
+      <div class="sechd" style="padding:0 0 6px"><div class="lbl">Context window</div><div class="sp"></div>
+        <div class="chip warn" id="limConf" style="display:none"></div></div>
+      <div class="kv"><div class="kvk">Model</div><select id="limModel"></select></div>
+      <div class="kv"><div class="kvk">Context</div><select id="limCtxSel"></select></div>
+      <div class="kv"><div class="kvk">KV cache</div><select id="limKv"></select></div>
+      <div id="limFc">
+        <div class="stackw" style="margin-top:8px"><div class="stack" id="limStack"></div>
+          <div class="tk soft" id="limFSoft"></div><div class="tk hard" id="limFHard"></div></div>
+        <div class="legend" style="margin-top:5px">
+          <span><b style="color:#5b9dff">■</b>weights</span><span><b style="color:#8b7bff">■</b>runtime</span>
+          <span><b style="color:#35c4d8">■</b>state</span><span><b style="color:#3ddc91">■</b>KV</span></div>
+        <div id="limRows" style="margin-top:6px"></div>
+        <div class="verdict" id="limVerdict"></div>
+        <div class="hint" id="limFits"></div>
+        <div class="hint" id="limNote"></div>
+      </div>
+      <div class="hint warn" id="limHermes" style="display:none"></div>
+      <div class="field" style="margin-top:7px"><button class="mini go" id="limApply" style="flex:1">Apply</button></div>
+      <div class="hint" id="limApplyHint"></div>
+    </div>
+
+    <div class="sec" id="limAdv" style="display:none">
+      <div class="sechd"><div class="lbl">What you can do</div></div>
+      <div id="limAdvList"></div>
+    </div>
+
+    <div class="card">
+      <div class="lbl" style="margin-bottom:4px">Caches and concurrency</div>
+      <div class="lrow"><span>Hot cache (RAM)</span><b id="limHot"></b></div>
+      <div class="lrow"><span>SSD cache limit</span><b id="limSsd"></b></div>
+      <div class="lrow"><span>Requests at once</span><b id="limConc"></b></div>
+      <div class="hint">Cache sizes are not applied live by oMLX, so they are read-only here — change them in
+        Admin and restart. Requests at once stays at 1 on purpose: oMLX issue #3767 (MTP with TurboQuant KV
+        crashes the engine when two requests decode together) is still open.</div>
+    </div>
+  </div><!-- /paneLim -->
+
   <div id="paneConn" style="display:none;flex-direction:column;gap:9px">
     <div class="card">
       <div class="lbl" style="margin-bottom:4px">Endpoints</div>
@@ -370,6 +450,7 @@
 
 <div id="toast"></div>
 
+<script src="limits.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const send = (action, arg='') =>
@@ -385,13 +466,14 @@ $('pin').onclick = () => {
 };
 
 // ── tabs ──
-const panes = {tMon:'paneMon', tMod:'paneMod', tConn:'paneConn'};
+const panes = {tMon:'paneMon', tMod:'paneMod', tLim:'paneLim', tConn:'paneConn'};
 Object.keys(panes).forEach(t => $(t).onclick = () => {
   Object.entries(panes).forEach(([tab, pane]) => {
     const on = tab === t;
     $(tab).classList.toggle('sel', on);
     $(pane).style.display = on ? 'flex' : 'none';
   });
+  limVisible(t === 'tLim');
 });
 
 // ── copy ──
@@ -755,6 +837,379 @@ window.onSearch = list => {
   $('searchRes').querySelectorAll('[data-dl]').forEach(b =>
     b.onclick = () => { send('download', b.dataset.dl); b.textContent = '…'; b.disabled = true; });
 };
+
+// ── limits ──
+// Forecasting lives in limits.js; this is the view and the apply paths.
+const LIM = { data: null, sel: null, draft: {}, guard: { tier: null, ceil: '', touched: false },
+              timer: null, armed: null, armT: null, shown: false };
+
+// Run a request against oMLX through the native bridge and wait for its answer.
+const apiWait = {}; let apiSeq = 0;
+// Settings changes answer in well under a second, so they give up quickly; a
+// model load can legitimately take minutes, so callers pass a longer limit.
+function api(method, path, body, timeoutMs) {
+  return new Promise(resolve => {
+    const token = 'a' + (++apiSeq);
+    apiWait[token] = resolve;
+    window.webkit.messageHandlers.bridge.postMessage(
+      { action: 'api', arg: '', token, method, path, body: body === undefined ? null : body });
+    setTimeout(() => {
+      if (apiWait[token]) { delete apiWait[token]; resolve({ status: 0, json: { detail: 'oMLX did not answer in time' } }); }
+    }, timeoutMs || 20000);
+  });
+}
+window.onApi = r => {
+  const f = apiWait[r.token];
+  if (f) { delete apiWait[r.token]; f({ status: r.status, json: r.json }); }
+};
+
+function limVisible(on) {
+  LIM.shown = on;
+  clearInterval(LIM.timer); LIM.timer = null;
+  if (on) { send('limitsGet'); LIM.timer = setInterval(() => send('limitsGet'), 5000); }
+}
+
+// Re-arm-to-confirm for changes that disturb what is running.
+function limArm(key, btn, armedLabel, normalLabel, normalClass) {
+  if (LIM.armed === key) { LIM.armed = null; clearTimeout(LIM.armT); return true; }
+  LIM.armed = key;
+  btn.textContent = armedLabel; btn.className = 'mini danger';
+  clearTimeout(LIM.armT);
+  LIM.armT = setTimeout(() => {
+    LIM.armed = null; btn.textContent = normalLabel; btn.className = normalClass;
+  }, 5000);
+  return false;
+}
+
+const limModels = () => (LIM.data && LIM.data.models) || [];
+const limModel = () => limModels().find(m => m.id === LIM.sel);
+const wOf = m => m.actual_size || m.estimated_size || 0;
+
+function limDraft(m) {
+  const st = m.settings || {};
+  const geo = Limits.geometry(m.config);
+  const native = m.native_context || (geo && geo.native) || 0;
+  const cur = { ctx: st.max_context_window || native || 0,
+                kvOn: !!st.turboquant_kv_enabled, kvBits: st.turboquant_kv_bits || 4 };
+  let d = LIM.draft[m.id];
+  if (!d) d = LIM.draft[m.id] = { touched: false, ctx: cur.ctx, kvOn: cur.kvOn, kvBits: cur.kvBits };
+  if (!d.touched) Object.assign(d, cur);
+  return { d, cur, native, geo };
+}
+
+// Everything the forecast needs, taken from what the server reports right now.
+function limInputs(m, d, geo) {
+  const G = Limits.GIB, p = LIM.data.pressure, loaded = limModels().filter(x => x.loaded);
+  const hot = (LIM.data.runtime_cache || {}).hot_cache_size_bytes || 0;
+  const loadedW = loaded.reduce((a, x) => a + wOf(x), 0);
+  // Whatever the process holds beyond weights and the hot cache. It already
+  // contains the current session's cache, so it errs on the safe side.
+  const measured = p.current_bytes - loadedW - hot;
+  const overhead = loaded.length ? Math.max(measured, 2 * G) : 4 * G;
+  return {
+    geo, ctx: d.ctx, seqs: (LIM.data.scheduler || {}).max_concurrent_requests || 1,
+    tq: { enabled: d.kvOn, bits: d.kvBits, skipLast: (m.settings || {}).turboquant_skip_last !== false },
+    weights: wOf(m), overhead, hot,
+    others: loaded.filter(x => x.id !== m.id).reduce((a, x) => a + wOf(x), 0),
+    soft: p.soft_bytes, hard: p.hard_bytes
+  };
+}
+
+function limMachine() {
+  const sys = LIM.data.system || {}, pv = sys.memory_guard_preview || {}, c = pv.custom || {};
+  return {
+    ceiling: LIM.data.pool.final_ceiling, maxCustom: c.ceiling_bytes || 0, staticCeiling: c.static_bytes || 0,
+    metalCap: c.metal_cap_bytes || 0, cpu: Math.max(0, (c.metal_cap_bytes || 0) - (sys.iogpu_wired_limit_bytes || 0)),
+    total: sys.total_memory_bytes || 0, available: sys.available_memory_bytes || 0,
+    footprint: LIM.data.pressure.current_bytes
+  };
+}
+
+window.onLimits = d => {
+  const msg = $('limMsg');
+  if (!d || d.error) {
+    msg.style.display = ''; msg.textContent = (d && d.error) || 'no data';
+    ['limMem', 'limCtx', 'limAdv'].forEach(i => $(i).style.display = 'none');
+    return;
+  }
+  msg.style.display = 'none';
+  $('limMem').style.display = ''; $('limCtx').style.display = '';
+  LIM.data = d;
+  if (!LIM.sel || !limModel()) {
+    const m = limModels().find(x => x.loaded) || limModels()[0];
+    LIM.sel = m ? m.id : null;
+  }
+  limRenderMemory();
+  limRenderModel();
+  limRenderCaches();
+};
+
+function limRenderMemory() {
+  const d = LIM.data, G = Limits.GIB, p = d.pressure, sys = d.system, pv = sys.memory_guard_preview || {};
+  const total = sys.total_memory_bytes, ceiling = d.pool.final_ceiling;
+  const lvl = p.pressure_level || 'ok';
+  $('limLevel').textContent = lvl;
+  $('limLevel').className = 'chip ' + (lvl === 'ok' ? 'ok' : lvl === 'soft' ? 'warn' : 'crit');
+  $('limUse').textContent = gb(p.current_bytes);
+  $('limOf').textContent = 'in use · ceiling ' + gb(ceiling);
+  $('limFill').style.width = Math.min(100, p.current_bytes / total * 100) + '%';
+  $('limTkSoft').style.left = (p.soft_bytes / total * 100) + '%';
+  $('limTkHard').style.left = (p.hard_bytes / total * 100) + '%';
+  $('limSoftV').textContent = gb(p.soft_bytes);
+  $('limHardV').textContent = gb(p.hard_bytes);
+  const maxC = (pv.custom || {}).ceiling_bytes || 0;
+  $('limMax').textContent = maxC ? 'most this Mac allows ' + gb(maxC) : '';
+  $('limTotal').textContent = gb(total);
+  $('limAvail').textContent = gb(sys.available_memory_bytes);
+
+  const b = Limits.binding(sys, d.memory);
+  $('limBind').innerHTML = ({
+    pinned:    `<b>Your custom ceiling</b> (${gb(b.pinned)}) is what limits you. Apple’s GPU memory cap would allow up to ${gb(b.max)}.`,
+    metal_cap: `<b>Apple’s GPU memory cap</b> is what limits you (${gb(b.max)}). Raising it takes a system setting — see the options below.`,
+    static:    `<b>The OS reserve</b> is what limits you: macOS keeps a share of RAM for itself.`,
+    dynamic:   `<b>Free memory right now</b> is what limits you. This mode adapts to what your other apps are using.`
+  })[b.kind] || '';
+
+  $('limLevelHelp').textContent = ({
+    ok:   `Normal. Above ${gb(p.soft_bytes)} oMLX pauses new requests and evicts idle models (running requests continue); above ${gb(p.hard_bytes)} it shrinks the hot cache and can abort work.`,
+    soft: 'Soft pressure: oMLX is holding new requests and evicting idle models. Running requests carry on.',
+    hard: 'Hard pressure: oMLX is shrinking the hot cache and may abort running work.'
+  })[lvl] || '';
+
+  // controls — keep the user's edits while they are mid-change
+  const g = LIM.guard, mem = d.memory || {};
+  if (!g.touched) { g.tier = mem.memory_guard_tier; g.ceil = mem.memory_guard_custom_ceiling_gb != null ? String(mem.memory_guard_custom_ceiling_gb) : ''; }
+  const tiers = ['safe', 'balanced', 'aggressive', 'custom'];
+  $('limTier').innerHTML = tiers.map(t => {
+    const c = (pv[t] || {}).ceiling_bytes;
+    const label = t === 'custom' ? 'custom — you choose' : `${t} · ${c ? gb(c) : '—'} now`;
+    return `<option value="${t}" ${g.tier === t ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+  $('limCeilRow').style.display = g.tier === 'custom' ? '' : 'none';
+  if (document.activeElement !== $('limCeil')) $('limCeil').value = g.ceil;
+  $('limGuardHint').textContent = g.tier === 'custom'
+    ? `Anywhere from 8 to ${maxC ? (maxC / G).toFixed(1) : '?'} GB. Takes effect immediately.`
+    : 'Safe, balanced and aggressive adapt to your free memory. Takes effect immediately.';
+}
+
+$('limTier').onchange = () => { LIM.guard.tier = $('limTier').value; LIM.guard.touched = true; limRenderMemory(); };
+$('limCeil').oninput = () => { LIM.guard.ceil = $('limCeil').value; LIM.guard.touched = true; };
+
+$('limGuardApply').onclick = async () => {
+  const d = LIM.data; if (!d) return;
+  const G = Limits.GIB, pv = d.system.memory_guard_preview || {}, tier = LIM.guard.tier;
+  const body = { memory_guard_tier: tier };
+  let newCeil = (pv[tier] || {}).ceiling_bytes || 0;
+  if (tier === 'custom') {
+    const v = parseFloat(String(LIM.guard.ceil).replace(',', '.'));
+    const max = ((pv.custom || {}).ceiling_bytes || 0) / G;
+    if (!isFinite(v) || v < 8) return toast('enter a ceiling in GB, 8 or more');
+    if (max && v > max + 0.05) return toast(`this Mac allows at most ${max.toFixed(1)} GB`);
+    body.memory_guard_custom_ceiling_gb = v; newCeil = v * G;
+  }
+  // A limit under what is in use makes oMLX start evicting at once; one within 10% of it
+  // puts you at soft pressure straight away. Say which, because they are different.
+  const inUse = d.pressure.current_bytes;
+  if (newCeil && inUse > newCeil * 0.9) {
+    const label = inUse > newCeil ? 'Below what’s in use — evict?' : 'Leaves almost no headroom — apply?';
+    if (!limArm('guard', $('limGuardApply'), label, 'Apply memory limit', 'mini go')) return;
+  }
+  $('limGuardApply').disabled = true;
+  const r = await api('POST', '/admin/api/global-settings', body);
+  $('limGuardApply').disabled = false;
+  const ok = r.status === 200 && r.json && r.json.success;
+  if (!ok) return toast((r.json && r.json.detail) || 'could not change the memory limit');
+  LIM.guard.touched = false;
+  const live = (r.json.runtime_applied || []).length > 0;
+  toast(live ? 'memory limit applied' : 'saved — restart oMLX to apply');
+  send('limitsGet');
+};
+
+// ── per-model context + KV ──
+function limRenderModel() {
+  const d = LIM.data, G = Limits.GIB, ms = limModels();
+  $('limModel').innerHTML = ms.map(m =>
+    `<option value="${esc(m.id)}" ${m.id === LIM.sel ? 'selected' : ''}>${esc(m.id)}${m.loaded ? ' ●' : ''}</option>`).join('');
+  const m = limModel();
+  if (!m) { $('limFc').style.display = 'none'; return; }
+  const { d: dr, cur, native, geo } = limDraft(m);
+
+  const stops = Limits.ctxStops(native);
+  if (dr.ctx && stops.indexOf(dr.ctx) === -1) stops.push(dr.ctx);
+  stops.sort((a, b) => a - b);
+  $('limCtxSel').innerHTML = stops.map(c =>
+    `<option value="${c}" ${c === dr.ctx ? 'selected' : ''}>${Limits.fmtTok(c)}${c === native ? ' (native)' : ''}</option>`).join('');
+
+  const bitsOpts = Limits.TQ_BITS.slice().reverse();
+  $('limKv').innerHTML = `<option value="off" ${!dr.kvOn ? 'selected' : ''}>Off — full precision</option>` +
+    bitsOpts.map(b => `<option value="${b}" ${dr.kvOn && dr.kvBits === b ? 'selected' : ''}>TurboQuant ${b}-bit</option>`).join('');
+
+  $('limHermes').style.display = (dr.ctx && dr.ctx < Limits.HERMES_MIN_CONTEXT) ? '' : 'none';
+  $('limHermes').textContent = `Hermes Agent needs at least ${Limits.fmtTok(Limits.HERMES_MIN_CONTEXT)} of context — oMLX refuses to launch it below that.`;
+
+  const fc = $('limFc');
+  const conf = $('limConf');
+  if (!geo) {
+    fc.style.display = 'none'; conf.style.display = 'none';
+    $('limApplyHint').textContent = 'oMLX could not read this model’s config, so there is no RAM forecast — the settings still apply.';
+  } else {
+    fc.style.display = ''; conf.style.display = '';
+    conf.textContent = ({ measured: 'measured', 'upper-bound': 'upper bound', estimate: 'estimate' })[geo.confidence];
+    conf.className = 'chip ' + (geo.confidence === 'measured' ? 'ok' : 'warn');
+    limRenderForecast(m, dr, geo);
+  }
+
+  const kvChanged = dr.kvOn !== cur.kvOn || (dr.kvOn && dr.kvBits !== cur.kvBits);
+  const ctxChanged = dr.ctx !== cur.ctx;
+  const btn = $('limApply');
+  if (!LIM.armed) {
+    btn.textContent = !ctxChanged && !kvChanged ? 'No changes'
+                    : kvChanged && m.loaded ? 'Apply — reloads the model' : 'Apply';
+    btn.className = 'mini go';
+  }
+  btn.disabled = !ctxChanged && !kvChanged;
+  $('limApplyHint').textContent = geo ? (kvChanged
+      ? (m.loaded ? 'KV cache settings are fixed when a model loads, so oMLX unloads it and reloads it (about 10 seconds). Cached prompts built with the old setting may need rebuilding.'
+                  : 'Takes effect the next time this model loads.')
+      : ctxChanged ? 'The context limit applies immediately, with no reload.' : '') : $('limApplyHint').textContent;
+}
+
+function limRenderForecast(m, dr, geo) {
+  const G = Limits.GIB, o = limInputs(m, dr, geo), f = Limits.forecast(o), P = f.parts;
+  const scale = Math.max(f.total, o.hard) * 1.04;
+  const seg = (v, c) => `<i style="width:${v / scale * 100}%;background:${c}"></i>`;
+  $('limStack').innerHTML = seg(P.weights + P.others, '#5b9dff') + seg(P.runtime, '#8b7bff') +
+                            seg(P.state, '#35c4d8') + seg(P.kv, '#3ddc91');
+  $('limFSoft').style.left = (o.soft / scale * 100) + '%';
+  $('limFHard').style.left = (o.hard / scale * 100) + '%';
+
+  const row = (k, v, cls) => `<div class="lrow ${cls || ''}"><span>${k}</span><b>${v}</b></div>`;
+  $('limRows').innerHTML =
+    row('Model weights', gb(P.weights)) +
+    (P.others ? row('Other loaded models', gb(P.others)) : '') +
+    row('Runtime and hot cache', gb(P.runtime)) +
+    (P.state ? row('Fixed state', gb(P.state)) : '') +
+    row(`KV cache at ${Limits.fmtTok(dr.ctx)}` + (o.seqs > 1 ? ` × ${o.seqs}` : ''), gb(P.kv)) +
+    row('Forecast total', gb(f.total) + ` of ${gb(o.soft)}`, 'tot');
+
+  const v = $('limVerdict');
+  if (f.verdict === 'fits') { v.className = 'verdict ok'; v.textContent = `Fits — ${gb(f.spareSoft)} to spare before oMLX starts pausing requests.`; }
+  else if (f.verdict === 'tight') { v.className = 'verdict warn'; v.textContent = `Tight — ${gb(-f.spareSoft)} over the soft limit, so oMLX would pause new requests.`; }
+  else { v.className = 'verdict bad'; v.textContent = `Won’t fit — ${gb(-f.spareHard)} over the hard limit, so oMLX could abort work.`; }
+
+  const ms = Limits.maxContext(o, 'soft'), mh = Limits.maxContext(o, 'hard');
+  $('limFits').textContent = ms === 0 ? 'Even an empty context is over the limit with these settings.'
+    : `Stays under the soft limit up to about ${Limits.fmtTok(ms)} tokens (${Limits.fmtTok(mh)} before the hard limit).`;
+  $('limNote').textContent = geo.note + '. ' + (o.tq.enabled ? 'TurboQuant sizes are measured at 4-bit; other widths are extrapolated.' : '');
+  limRenderAdvice(m, dr, o, geo);
+}
+
+$('limModel').onchange = () => { LIM.sel = $('limModel').value; LIM.armed = null; limRenderModel(); };
+$('limCtxSel').onchange = () => { const m = limModel(); if (!m) return; const { d } = limDraft(m); d.ctx = parseInt($('limCtxSel').value, 10); d.touched = true; LIM.armed = null; limRenderModel(); };
+$('limKv').onchange = () => {
+  const m = limModel(); if (!m) return; const { d } = limDraft(m);
+  const v = $('limKv').value; d.touched = true; LIM.armed = null;
+  if (v === 'off') d.kvOn = false; else { d.kvOn = true; d.kvBits = parseFloat(v); }
+  limRenderModel();
+};
+
+$('limApply').onclick = async () => {
+  const m = limModel(); if (!m) return;
+  const { d, cur, native } = limDraft(m);
+  const ctxChanged = d.ctx !== cur.ctx;
+  const kvChanged = d.kvOn !== cur.kvOn || (d.kvOn && d.kvBits !== cur.kvBits);
+  if (!ctxChanged && !kvChanged) return;
+  if (kvChanged && m.loaded &&
+      !limArm('model', $('limApply'), `Reload ${m.id}?`, 'Apply — reloads the model', 'mini go')) return;
+
+  const body = {};
+  if (ctxChanged) body.max_context_window = (native && d.ctx >= native) ? null : d.ctx;
+  if (kvChanged) { body.turboquant_kv_enabled = d.kvOn; if (d.kvOn) body.turboquant_kv_bits = d.kvBits; }
+  $('limApply').disabled = true;
+  const path = `/admin/api/models/${encodeURIComponent(m.id)}/settings`;
+  const r = await api('PUT', path, body);
+  if (!(r.status === 200 && r.json && r.json.success)) {
+    $('limApply').disabled = false;
+    return toast((r.json && r.json.detail) || 'could not change the model settings');
+  }
+  d.touched = false;
+  const j = r.json;
+  if (kvChanged && m.loaded && j.auto_unloaded && !j.auto_reloaded && !j.reload_deferred) {
+    toast('reloading ' + m.id + '…');
+    const lr = await api('POST', `/v1/models/${encodeURIComponent(m.id)}/load`, undefined, 310000);
+    toast(lr.status === 200 ? 'settings applied — model reloaded' : 'settings saved — it will load on the next request');
+  } else if (j.reload_deferred) {
+    toast('saved — the model reloads once its current request finishes');
+  } else {
+    toast(ctxChanged && !kvChanged ? `context set to ${Limits.fmtTok(d.ctx)}` : 'settings applied');
+  }
+  send('limitsGet');
+};
+
+// ── suggestions: each one stages a change into the controls above ──
+function limRenderAdvice(m, dr, o, geo) {
+  const mach = limMachine(), G = Limits.GIB;
+  const items = Limits.advise(o, mach);
+  const html = items.map(a => {
+    if (a.kind === 'too-big') return `<div class="adv"><div class="at">This model doesn’t fit at all</div>
+      <div class="ad">Its weights and the runtime are already ${gb(a.over)} over the soft limit before any context is added,
+        so lowering the context can’t help. Use a smaller or lower-bit build (the Models tab can fetch one), or unload
+        what else is loaded.</div></div>`;
+    if (a.kind === 'cap-context') return `<div class="adv"><div class="at">Lower the context to ${Limits.fmtTok(a.ctx)}</div>
+      <div class="ad">Frees ${gb(a.savedBytes)} of KV cache and keeps you under the soft limit.</div>
+      <button class="mini" data-adv="ctx" data-v="${a.ctx}">Use ${Limits.fmtTok(a.ctx)}</button></div>`;
+    if (a.kind === 'turboquant') return `<div class="adv"><div class="at">Quantise the KV cache to ${a.bits}-bit</div>
+      <div class="ad">Saves ${gb(a.savedBytes)} at this context and raises how far you can go from about
+        ${Limits.fmtTok(a.oldMax)} to ${Limits.fmtTok(a.newMax)} tokens. It is lossy, so check output quality on your own work.</div>
+      <button class="mini" data-adv="kv" data-v="${a.bits}">Use ${a.bits}-bit</button></div>`;
+    if (a.kind === 'raise-ceiling') return `<div class="adv"><div class="at">Raise the ceiling to ${gb(a.to)}</div>
+      <div class="ad">${gb(a.gainBytes)} more headroom — this Mac’s maximum without changing a system setting; about
+        ${Limits.fmtTok(a.oldMax)} → ${Limits.fmtTok(a.newMax)} tokens.${a.squeezes
+          ? ' <span class="warn">Only ' + gb(mach.available) + ' is free right now, so your other apps would be squeezed.</span>' : ''}</div>
+      <button class="mini" data-adv="ceil" data-v="${(a.to / G).toFixed(1)}">Set ${(a.to / G).toFixed(1)} GB</button></div>`;
+    if (a.kind === 'wired-limit') return `<div class="adv"><div class="at">Raise Apple’s GPU memory cap</div>
+      <div class="ad">This lets the ceiling go up to about ${gb(a.newMax)} (+${gb(a.gainBytes)}), which would leave only
+        <span class="warn">${gb(Math.max(0, mach.total - a.newMax))}</span> for macOS and your other apps — raise the
+        ceiling in small steps and watch “Free for other apps”. It needs your admin password, so run it yourself in
+        Terminal, and it resets when you restart the Mac.</div><pre>${esc(a.command)}</pre>
+      <button class="mini" data-adv="copy" data-v="${esc(a.command)}">Copy command</button></div>`;
+    if (a.kind === 'unload-others') {
+      const others = limModels().filter(x => x.loaded && x.id !== m.id);
+      return `<div class="adv"><div class="at">${a.fixes ? 'Unload the other loaded model' : 'Unload what you aren’t using'}</div>
+        <div class="ad">${a.fixes ? `This model fits on its own — unloading the others frees ${gb(a.bytes)} and makes it fit.`
+                              : `Other loaded models hold ${gb(a.bytes)} of the same memory.`}</div>
+        ${others.map(x => `<button class="mini" data-adv="unload" data-v="${esc(x.id)}" style="margin-right:5px">Unload ${esc(x.id)}</button>`).join('')}</div>`;
+    }
+    return '';
+  }).join('');
+  $('limAdv').style.display = html ? '' : 'none';
+  $('limAdvList').innerHTML = html;
+  $('limAdvList').querySelectorAll('[data-adv]').forEach(b => b.onclick = () => limStage(b.dataset.adv, b.dataset.v));
+}
+
+function limStage(kind, v) {
+  const m = limModel(); if (!m) return;
+  if (kind === 'copy') return copy(v);
+  if (kind === 'unload') { send('unload', v); return setTimeout(() => send('limitsGet'), 1500); }
+  if (kind === 'ceil') {
+    LIM.guard.tier = 'custom'; LIM.guard.ceil = v; LIM.guard.touched = true; LIM.armed = null;
+    limRenderMemory();
+    toast('staged — press Apply memory limit');
+    return $('limMem').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  const { d } = limDraft(m); d.touched = true; LIM.armed = null;
+  if (kind === 'ctx') d.ctx = parseInt(v, 10);
+  if (kind === 'kv') { d.kvOn = true; d.kvBits = parseFloat(v); }
+  limRenderModel();
+  toast('staged — press Apply');
+}
+
+function limRenderCaches() {
+  const d = LIM.data, rc = d.runtime_cache || {}, c = d.cache || {};
+  $('limHot').textContent = `${gb(rc.hot_cache_size_bytes || 0)} of ${gb(rc.hot_cache_max_bytes || 0)}`;
+  $('limSsd').textContent = c.ssd_cache_max_size || '—';
+  $('limConc').textContent = (d.scheduler || {}).max_concurrent_requests || '—';
+}
 
 // ── updater ──
 let upd = null;   // populated by window.onUpdate

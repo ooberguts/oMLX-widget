@@ -50,6 +50,7 @@ if [[ ! -x "$APP/Contents/MacOS/OMLXWidget" ]]; then
 fi
 
 cp Resources/index.html "$APP/Contents/Resources/index.html"
+cp Resources/limits.js  "$APP/Contents/Resources/limits.js"
 cp Resources/hermes.py  "$APP/Contents/Resources/hermes.py"
 cp Resources/omlx-update.sh "$APP/Contents/Resources/omlx-update.sh"
 [[ -f Resources/AppIcon.icns ]] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
